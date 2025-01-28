@@ -6,6 +6,7 @@ import { JwtService } from '@nestjs/jwt';
 import { RegisterDto } from './dto/register.dto';
 import * as bcrypt from 'bcrypt';
 import { MailService } from '../mail/mail.service';
+import { LoginDto } from './dto/login.dto';
 
 @Injectable()
 export class AuthService {
@@ -82,5 +83,41 @@ export class AuthService {
     } catch (error) {
       throw new BadRequestException('Invalid or expired token');
     }
+  }
+
+  async login(loginDto: LoginDto): Promise<{ token: string, user: Partial<User> }> {
+    try {
+    const { email, password } = loginDto;
+
+    // Find user by email
+    const user = await this.userModel.findOne({ email });
+    if (!user) {
+      throw new BadRequestException('Invalid credentials');
+    }
+
+    if (!user.isVerified) {
+      throw new BadRequestException('Please verify your email first');
+    }
+
+    // Compare Password
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    if (!isPasswordValid) {
+      throw new BadRequestException('Invalid credentials');
+    }
+
+    // Generate JWT
+    const token = this.jwtService.sign({ email: user._id });
+
+    return {
+      token,
+      user: {
+        email: user.email,
+        name: user.name,
+      }
+    };
+  } catch (error) {
+    throw new BadRequestException('Invalid credentials');
+  }
+
   }
 }
