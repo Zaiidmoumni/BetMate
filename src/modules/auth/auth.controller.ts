@@ -6,6 +6,7 @@ import {
   HttpStatus,
   Post,
   Query,
+  Request,
   Res,
   UnauthorizedException,
   UseGuards,
@@ -53,11 +54,11 @@ export class AuthController {
     @Cookies('refreshToken') refreshToken: string,
     @Res({ passthrough: true }) res: Response,
   ): Promise<{ accessToken: string }> {
-    if(!refreshToken) {
+    if (!refreshToken) {
       throw new UnauthorizedException('Refresh token not found');
     }
     const accessToken = await this.authService.refreshAccessToken(refreshToken);
-    return accessToken ;
+    return accessToken;
   }
 
   @UseGuards(AccessTokenGuard)
@@ -65,20 +66,23 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   async logout(@Res({ passthrough: true }) res: Response) {
     // console.log('logout');
-    
+
     return this.authService.logout(res);
   }
 
   @Post('forgot-password')
-async requestPasswordReset(@Body() requestDto: RequestPasswordResetDto) {
-  return this.authService.requestPasswordReset(requestDto.email);
+  async requestPasswordReset(@Body() requestDto: RequestPasswordResetDto) {
+    return this.authService.requestPasswordReset(requestDto.email);
+  }
+
+  @Post('reset-password')
+  async resetPassword(@Body() resetDto: ResetPasswordDto) {
+    return this.authService.resetPassword(resetDto.token, resetDto.password);
+  }
+
+  @UseGuards(AccessTokenGuard)
+  @Get('me')
+  async getProfile(@Request() req) {    
+    return this.authService.getProfile(req.user.userId);
+  }
 }
-
-@Post('reset-password')
-async resetPassword(@Body() resetDto: ResetPasswordDto) {
-  return this.authService.resetPassword(resetDto.token, resetDto.password);
-}
-
-}
-
-

@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { User } from '../users/schemas/user.schema';
 import { Model } from 'mongoose';
@@ -195,33 +195,36 @@ export class AuthService {
   }
 
   // Reset password
-  async resetPassword(token: string, newPassword: string): Promise<{ message: string }> {
+  async resetPassword(
+    token: string,
+    newPassword: string,
+  ): Promise<{ message: string }> {
     try {
       // Verify token
       const decoded = this.jwtService.verify(token, {
-        secret: process.env.JWT_RESET_SECRET
+        secret: process.env.JWT_RESET_SECRET,
       });
-  
+
       // Ensure it's a password reset token
       if (decoded.type !== 'password_reset') {
         throw new BadRequestException('Invalid token type');
       }
-  
+
       // Find user
       const user = await this.authRepository.findByEmail(decoded.email);
       if (!user) {
         throw new BadRequestException('Invalid token');
       }
-  
+
       // Hash new password
       const hashedPassword = await bcrypt.hash(newPassword, 10);
-  
+
       // Update password
       await this.authRepository.updatePassword(user.id, hashedPassword);
-  
+
       // Send notification email
       await this.mailService.sendPasswordChangedNotification(user.email);
-  
+
       return { message: 'Password has been reset successfully' };
     } catch (error) {
       throw new BadRequestException('Invalid or expired token');
@@ -239,6 +242,25 @@ export class AuthService {
     });
 
     return { message: 'Logged out successfully' };
+  }
+
+  // Get user profile
+  async getProfile(userId: string): Promise<Omit<User, 'password'>> {
+    try {
+      const user = await this.authRepository.findById(userId);
+      if (!user) {
+        throw new NotFoundException('User not found');
+      }
+  
+      const { password, ...userWithoutPassword } = user.toObject();
+      return userWithoutPassword;
+  
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new BadRequestException('Failed to get user data');
+    }
   }
 
   /*
