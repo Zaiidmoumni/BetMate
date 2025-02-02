@@ -15,8 +15,8 @@ import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { Response } from 'express';
 import { User } from '../users/schemas/user.schema';
-import { Cookies } from 'src/decorators/cookies.decorator';
-import { AccessTokenGuard } from 'src/guards/accessToken.guard';
+import { Cookies } from '@/decorators/cookies.decorator';
+import { AccessTokenGuard } from '@/guards/accessToken.guard';
 
 @Controller('auth')
 export class AuthController {
