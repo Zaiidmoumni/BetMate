@@ -19,6 +19,8 @@ describe('AuthService', () => {
     findByEmail: jest.fn(),
     create: jest.fn(),
     markEmailAsVerified: jest.fn(),
+    findById: jest.fn(),
+    updatePassword: jest.fn(),
   };
 
   const mockJwtService = {
@@ -29,6 +31,8 @@ describe('AuthService', () => {
 
   const mockMailService = {
     sendVerificationEmail: jest.fn(),
+    sendPasswordResetEmail: jest.fn(),
+    sendPasswordChangedNotification: jest.fn(),
   };
 
   const mockResponse = {
@@ -242,6 +246,127 @@ describe('AuthService', () => {
         sameSite: 'strict',
         path: '/auth/refresh',
       });
+    });
+  });
+  describe('requestPasswordReset', () => {
+    it('should handle password reset request for existing user', async () => {
+      const email = 'test@example.com';
+      const user = { id: '1', email, name: 'Test User' };
+      const resetToken = 'reset-token';
+
+      mockAuthRepository.findByEmail.mockResolvedValue(user);
+      mockJwtService.sign.mockReturnValue(resetToken);
+      mockMailService.sendPasswordResetEmail.mockResolvedValue(true);
+
+      const result = await service.requestPasswordReset(email);
+
+      expect(result.message).toBe('Please check your email for further instructions. If the email exists in our system, we will send a password reset link.');
+      expect(authRepository.findByEmail).toHaveBeenCalledWith(email);
+      expect(jwtService.sign).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sub: user.id,
+          email: user.email,
+          type: 'password_reset'
+        }),
+        expect.any(Object)
+      );
+      expect(mailService.sendPasswordResetEmail).toHaveBeenCalledWith(email, resetToken);
+    });
+
+    it('should handle password reset request for non-existent user', async () => {
+      const email = 'nonexistent@example.com';
+
+      mockAuthRepository.findByEmail.mockResolvedValue(null);
+
+      const result = await service.requestPasswordReset(email);
+
+      expect(result.message).toBe('Please check your email for further instructions. If the email exists in our system, we will send a password reset link.');
+      expect(authRepository.findByEmail).toHaveBeenCalledWith(email);
+      expect(mailService.sendPasswordResetEmail).not.toHaveBeenCalled();
+    });
+
+    it('should handle email sending failure', async () => {
+      const email = 'test@example.com';
+      const user = { id: '1', email, name: 'Test User' };
+
+      mockAuthRepository.findByEmail.mockResolvedValue(user);
+      mockMailService.sendPasswordResetEmail.mockResolvedValue(false);
+
+      await expect(service.requestPasswordReset(email))
+        .rejects
+        .toThrow(BadRequestException);
+    });
+  });
+
+  describe('resetPassword', () => {
+    it('should reset password successfully', async () => {
+      const token = 'valid-token';
+      const newPassword = 'NewPassword123!';
+      const decoded = { 
+        sub: '1', 
+        email: 'test@example.com',
+        type: 'password_reset'
+      };
+      const user = { id: '1', email: 'test@example.com' };
+
+      mockJwtService.verify.mockReturnValue(decoded);
+      mockAuthRepository.findByEmail.mockResolvedValue(user);
+      mockMailService.sendPasswordChangedNotification.mockResolvedValue(true);
+
+      const result = await service.resetPassword(token, newPassword);
+
+      expect(result.message).toBe('Password has been reset successfully');
+      expect(authRepository.updatePassword).toHaveBeenCalledWith(
+        user.id,
+        expect.any(String)
+      );
+      expect(mailService.sendPasswordChangedNotification).toHaveBeenCalledWith(user.email);
+    });
+
+    it('should handle invalid token', async () => {
+      const token = 'invalid-token';
+      const newPassword = 'NewPassword123!';
+
+      mockJwtService.verify.mockImplementation(() => {
+        throw new Error('Invalid token');
+      });
+
+      await expect(service.resetPassword(token, newPassword))
+        .rejects
+        .toThrow(BadRequestException);
+    });
+
+    it('should handle wrong token type', async () => {
+      const token = 'wrong-type-token';
+      const newPassword = 'NewPassword123!';
+      const decoded = { 
+        sub: '1', 
+        email: 'test@example.com',
+        type: 'wrong_type'
+      };
+
+      mockJwtService.verify.mockReturnValue(decoded);
+
+      await expect(service.resetPassword(token, newPassword))
+        .rejects
+        .toThrow(BadRequestException);
+    });
+
+    it('should handle non-existent user', async () => {
+      const token = 'valid-token';
+      const newPassword = 'NewPassword123!';
+      const decoded = { 
+        sub: '1', 
+        email: 'test@example.com',
+        type: 'password_reset'
+      };
+
+      mockJwtService.verify.mockReturnValue(decoded);
+      mockAuthRepository.findByEmail.mockResolvedValue(null);
+
+      await expect(service.resetPassword(token, newPassword))
+        .rejects
+        .toThrow(BadRequestException);
     });
   });
 });

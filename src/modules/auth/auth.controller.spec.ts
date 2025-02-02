@@ -4,8 +4,10 @@ import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { Response } from 'express';
-import { UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { User } from '@/modules/users/schemas/user.schema';
+import { ResetPasswordDto } from './dto/reset-password.dto';
+import { RequestPasswordResetDto } from './dto/request-password-reset.dto';
 
 // Mock the decorators and guards
 jest.mock('@/decorators/cookies.decorator', () => ({
@@ -36,6 +38,8 @@ describe('AuthController', () => {
     verifyEmail: jest.fn(),
     login: jest.fn(),
     refreshAccessToken: jest.fn(),
+    requestPasswordReset: jest.fn(),
+    resetPassword: jest.fn(),
     logout: jest.fn(),
   };
 
@@ -143,6 +147,68 @@ describe('AuthController', () => {
       await expect(controller.refreshToken(refreshToken, mockResponse))
         .rejects
         .toThrow(UnauthorizedException);
+    });
+  });
+
+  describe('requestPasswordReset', () => {
+    it('should request password reset successfully', async () => {
+      const requestDto: RequestPasswordResetDto = {
+        email: 'test@example.com',
+      };
+      const expectedResult = {
+        message: 'If your email is registered, you will receive reset instructions.',
+      };
+
+      mockAuthService.requestPasswordReset.mockResolvedValue(expectedResult);
+
+      const result = await controller.requestPasswordReset(requestDto);
+
+      expect(result).toEqual(expectedResult);
+      expect(authService.requestPasswordReset).toHaveBeenCalledWith(requestDto.email);
+    });
+
+    it('should return same message even if email does not exist', async () => {
+      const requestDto: RequestPasswordResetDto = {
+        email: 'nonexistent@example.com',
+      };
+      const expectedResult = {
+        message: 'If your email is registered, you will receive reset instructions.',
+      };
+
+      mockAuthService.requestPasswordReset.mockResolvedValue(expectedResult);
+
+      const result = await controller.requestPasswordReset(requestDto);
+
+      expect(result).toEqual(expectedResult);
+      expect(authService.requestPasswordReset).toHaveBeenCalledWith(requestDto.email);
+    });
+  });
+
+  describe('resetPassword', () => {
+    it('should reset password successfully', async () => {
+      const resetDto: ResetPasswordDto = {
+        token: 'valid-token',
+        password: 'NewPassword123!',
+      };
+      const expectedResult = { message: 'Password has been reset successfully' };
+
+      mockAuthService.resetPassword.mockResolvedValue(expectedResult);
+
+      const result = await controller.resetPassword(resetDto);
+
+      expect(result).toEqual(expectedResult);
+      expect(authService.resetPassword).toHaveBeenCalledWith(resetDto.token, resetDto.password);
+    });
+
+    it('should handle invalid reset token', async () => {
+      const resetDto: ResetPasswordDto = {
+        token: 'invalid-token',
+        password: 'NewPassword123!',
+      };
+
+      mockAuthService.resetPassword.mockRejectedValue(new BadRequestException('Invalid or expired token'));
+
+      await expect(controller.resetPassword(resetDto)).rejects.toThrow(BadRequestException);
     });
   });
 
