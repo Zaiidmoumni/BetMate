@@ -17,6 +17,8 @@ import { Response } from 'express';
 import { User } from '../users/schemas/user.schema';
 import { Cookies } from '@/decorators/cookies.decorator';
 import { AccessTokenGuard } from '@/guards/accessToken.guard';
+import { RequestPasswordResetDto } from './dto/request-password-reset.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -66,6 +68,17 @@ export class AuthController {
     
     return this.authService.logout(res);
   }
+
+  @Post('forgot-password')
+async requestPasswordReset(@Body() requestDto: RequestPasswordResetDto) {
+  return this.authService.requestPasswordReset(requestDto.email);
+}
+
+@Post('reset-password')
+async resetPassword(@Body() resetDto: ResetPasswordDto) {
+  return this.authService.resetPassword(resetDto.token, resetDto.password);
+}
+
 }
 
 

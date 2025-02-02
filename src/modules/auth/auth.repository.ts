@@ -16,6 +16,12 @@ export class AuthRepository {
     return newUser.save();
   }
 
+  async updatePassword(userId: string, hashedPassword: string): Promise<void> {
+    await this.userModel.findByIdAndUpdate(userId, {
+      password: hashedPassword
+    });
+  }
+  
   async markEmailAsVerified(email: string): Promise<User | null> {
     return this.userModel.findOneAndUpdate(
       { email },
