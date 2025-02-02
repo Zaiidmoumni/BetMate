@@ -18,13 +18,16 @@ export class AuthService {
     private mailService: MailService,
   ) {}
 
-  async register(registerDto: RegisterDto): Promise<{ message: string; user: Partial<User> }> {
+  // Register a new user
+  async register(
+    registerDto: RegisterDto,
+  ): Promise<{ message: string; user: Partial<User> }> {
     const { email, password, name } = registerDto;
 
     // Check if the user already exists
     const user = await this.authRepository.findByEmail(email);
     if (user) {
-        throw new BadRequestException('User already exists');
+      throw new BadRequestException('User already exists');
     }
 
     // Hash Password
@@ -50,78 +53,51 @@ export class AuthService {
     );
 
     if (!emailSent) {
-        throw new BadRequestException('Failed to send verification email');
+      throw new BadRequestException('Failed to send verification email');
     }
 
     return {
-        message: 'Registration successful. Please check your email to verify your account.',
-        user: {
-          email: newUser.email,
-          name: newUser.name,
-        }
-      };
+      message:
+        'Registration successful. Please check your email to verify your account.',
+      user: {
+        email: newUser.email,
+        name: newUser.name,
+      },
+    };
   }
+
+  // Verify email
   async verifyEmail(token: string): Promise<{ message: string }> {
     try {
-
-        // Verify Token
+      // Verify Token
       const decoded = this.jwtService.verify(token);
 
-        // Find user by email   
+      // Find user by email
       const user = await this.authRepository.findByEmail(decoded.email);
 
       if (!user) {
         throw new BadRequestException('Invalid token');
       }
 
-      if(user.isVerified) {
+      if (user.isVerified) {
         throw new BadRequestException('Email already verified');
       }
 
       await this.authRepository.markEmailAsVerified(decoded.email);
 
-      return { message: 'Email verified successfully, Please login to continue.' };
+      return {
+        message: 'Email verified successfully, Please login to continue.',
+      };
     } catch (error) {
       throw new BadRequestException('Invalid or expired token');
     }
   }
 
-  // async login(loginDto: LoginDto): Promise<{ token: string, user: Partial<User> }> {
-  //   try {
-  //   const { email, password } = loginDto;
-
-  //   // Find user by email
-  //   const user = await this.authRepository.findByEmail(email);
-  //   if (!user) {
-  //     throw new BadRequestException('Invalid credentials');
-  //   }
-
-  //   if (!user.isVerified) {
-  //     throw new BadRequestException('Please verify your email first');
-  //   }
-
-  //   // Compare Password
-  //   const isPasswordValid = await bcrypt.compare(password, user.password);
-  //   if (!isPasswordValid) {
-  //     throw new BadRequestException('Invalid credentials');
-  //   }
-
-  //   // Generate JWT
-  //   const token = this.jwtService.sign({ email: user._id });
-
-  //   return {
-  //     token,
-  //     user: {
-  //       email: user.email,
-  //       name: user.name,
-  //     }
-  //   };
-  // } catch (error) {
-  //   throw new BadRequestException('Invalid credentials');
-  // // }
-
-  // }
-  async login(loginDto: LoginDto, res: Response): Promise<{ accessToken: string, user: Partial<User> }> {
+  // Login user
+  async login(
+    loginDto: LoginDto,
+    res: Response,
+  ): Promise<{ accessToken: string; user: Partial<User> }> {
     const { email, password } = loginDto;
 
     // Find user by email
@@ -152,16 +128,61 @@ export class AuthService {
       accessToken,
       user: {
         email: user.email,
-        name: user.name
-      }
+        name: user.name,
+      },
     };
   }
 
-  async refreshAccessToken(refreshToken: string): Promise<{ accessToken: string }> {
+  // Request password reset
+  async requestPasswordReset(email: string): Promise<{ message: string }> {
+    // Find user by email
+    const user = await this.authRepository.findByEmail(email);
+
+    // Always return the same message to prevent user enumeration
+    if (!user) {
+      return {
+        message:
+          'Please check your email for further instructions. If the email exists in our system, we will send a password reset link.',
+      };
+    }
+
+    // Generate reset token
+    const resetToken = this.jwtService.sign(
+      {
+        sub: user.id,
+        email: user.email,
+        type: 'password_reset',
+      },
+      {
+        secret: process.env.JWT_RESET_SECRET,
+        expiresIn: '15m',
+      },
+    );
+
+    // Send password reset email
+    const emailSent = await this.mailService.sendPasswordResetEmail(
+      user.email,
+      resetToken,
+    );
+
+    if (!emailSent) {
+      throw new BadRequestException('Failed to send password reset email');
+    }
+
+    return {
+      message:
+        'Please check your email for further instructions. If the email exists in our system, we will send a password reset link.',
+    };
+  }
+
+  // Refresh access token
+  async refreshAccessToken(
+    refreshToken: string,
+  ): Promise<{ accessToken: string }> {
     try {
       // Verify refresh token
       const decoded = this.jwtService.verify(refreshToken, {
-        secret: process.env.JWT_REFRESH_SECRET
+        secret: process.env.JWT_REFRESH_SECRET,
       });
 
       // Generate new access token
@@ -173,6 +194,41 @@ export class AuthService {
     }
   }
 
+  // Reset password
+  async resetPassword(token: string, newPassword: string): Promise<{ message: string }> {
+    try {
+      // Verify token
+      const decoded = this.jwtService.verify(token, {
+        secret: process.env.JWT_RESET_SECRET
+      });
+  
+      // Ensure it's a password reset token
+      if (decoded.type !== 'password_reset') {
+        throw new BadRequestException('Invalid token type');
+      }
+  
+      // Find user
+      const user = await this.authRepository.findByEmail(decoded.email);
+      if (!user) {
+        throw new BadRequestException('Invalid token');
+      }
+  
+      // Hash new password
+      const hashedPassword = await bcrypt.hash(newPassword, 10);
+  
+      // Update password
+      await this.authRepository.updatePassword(user.id, hashedPassword);
+  
+      // Send notification email
+      await this.mailService.sendPasswordChangedNotification(user.email);
+  
+      return { message: 'Password has been reset successfully' };
+    } catch (error) {
+      throw new BadRequestException('Invalid or expired token');
+    }
+  }
+
+  // logout
   async logout(res: Response) {
     // Clear refresh token cookie
     res.clearCookie('refreshToken', {
@@ -185,6 +241,11 @@ export class AuthService {
     return { message: 'Logged out successfully' };
   }
 
+  /*
+   * Helper functions
+   */
+
+  // Set refresh token in HTTP-only cookie
   private setRefreshTokenCookie(res: Response, token: string) {
     res.cookie('refreshToken', token, {
       httpOnly: true,
@@ -195,23 +256,36 @@ export class AuthService {
     });
   }
 
+  // Generate JWT access token
   private async generateAccessToken(userId: string): Promise<string> {
     return this.jwtService.signAsync(
       { sub: userId },
       {
         secret: process.env.JWT_SECRET,
-        expiresIn: process.env.JWT_EXPIRATION
-      }
+        expiresIn: process.env.JWT_EXPIRATION,
+      },
     );
   }
 
+  // Generate JWT refresh token
   private async generateRefreshToken(userId: string): Promise<string> {
     return this.jwtService.signAsync(
       { sub: userId },
       {
         secret: process.env.JWT_REFRESH_SECRET,
         expiresIn: process.env.JWT_REFRESH_EXPIRATION,
-      }
+      },
+    );
+  }
+
+  // Generate password reset token
+  private async generatePasswordResetToken(email: string): Promise<string> {
+    return this.jwtService.signAsync(
+      { sub: email },
+      {
+        secret: process.env.JWT_RESET_PASSWORD_SECRET,
+        expiresIn: '5m',
+      },
     );
   }
 }
