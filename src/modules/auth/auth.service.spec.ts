@@ -2,7 +2,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Response } from 'express';
 import { AuthService } from './auth.service';
 import { AuthRepository } from './auth.repository';
@@ -21,6 +21,9 @@ describe('AuthService', () => {
     markEmailAsVerified: jest.fn(),
     findById: jest.fn(),
     updatePassword: jest.fn(),
+    updateEmail: jest.fn(),
+    updateName: jest.fn(),
+
   };
 
   const mockJwtService = {
@@ -368,5 +371,139 @@ describe('AuthService', () => {
         .rejects
         .toThrow(BadRequestException);
     });
+  });
+ describe('getProfile', () => {
+    const userId = 'user-id';
+    const mockUser = {
+      id: userId,
+      email: 'test@example.com',
+      name: 'Test User',
+      password: 'hashed_password',
+      isVerified: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+
+    it('should throw NotFoundException when user is not found', async () => {
+      mockAuthRepository.findById.mockResolvedValue(null);
+
+      await expect(service.getProfile(userId))
+        .rejects
+        .toThrow(NotFoundException);
+    });
+
+    it('should handle database errors gracefully', async () => {
+      mockAuthRepository.findById.mockRejectedValue(new Error('Database error'));
+
+      await expect(service.getProfile(userId))
+        .rejects
+        .toThrow(BadRequestException);
+    });
+  });
+
+  describe('updateProfile', () => {
+    const userId = 'user-id';
+    const mockUser = {
+      id: userId,
+      email: 'test@example.com',
+      name: 'Test User',
+      password: 'hashed_password',
+      isVerified: true
+    };
+
+    beforeEach(() => {
+      mockAuthRepository.findById.mockResolvedValue(mockUser);
+    });
+
+    it('should successfully update user name', async () => {
+      const updateData = { name: 'New Name' };
+      const updatedUser = { ...mockUser, name: 'New Name' };
+      
+      mockAuthRepository.updateName.mockResolvedValue(updatedUser);
+      mockAuthRepository.findById.mockResolvedValueOnce(mockUser)
+        .mockResolvedValueOnce(updatedUser);
+
+      const result = await service.updateProfile(userId, updateData);
+
+      expect(result).toEqual({
+        message: 'Profile updated successfully',
+        user: {
+          email: mockUser.email,
+          name: 'New Name',
+        }
+      });
+      expect(authRepository.updateName).toHaveBeenCalledWith(userId, 'New Name');
+    });
+
+    it('should handle email update with verification', async () => {
+      const updateData = { email: 'newemail@example.com' };
+      
+      mockAuthRepository.findByEmail.mockResolvedValue(null);
+      mockJwtService.sign.mockReturnValue('verification-token');
+      mockAuthRepository.updateEmail.mockResolvedValue({
+        ...mockUser,
+        email: 'newemail@example.com',
+        isVerified: false
+      });
+
+      const result = await service.updateProfile(userId, updateData);
+
+      expect(result.message).toBe('Profile updated successfully');
+      expect(mailService.sendVerificationEmail).toHaveBeenCalledWith(
+        'newemail@example.com',
+        'verification-token'
+      );
+      expect(authRepository.updateEmail).toHaveBeenCalledWith(
+        userId,
+        'newemail@example.com'
+      );
+    });
+
+    it('should prevent email update if new email is already in use', async () => {
+      const updateData = { email: 'existing@example.com' };
+      
+      mockAuthRepository.findByEmail.mockResolvedValue({ id: 'other-user' });
+
+      await expect(service.updateProfile(userId, updateData))
+        .rejects
+        .toThrow(BadRequestException);
+      expect(authRepository.updateEmail).not.toHaveBeenCalled();
+    });
+
+    it('should handle multiple field updates together', async () => {
+      const updateData = {
+        name: 'New Name',
+        email: 'newemail@example.com',
+        password:'password123'
+      };
+
+      mockAuthRepository.findByEmail.mockResolvedValue(null);
+      jest.spyOn(bcrypt, 'compare').mockImplementation(() => Promise.resolve(true));
+      mockJwtService.sign.mockReturnValue('verification-token');
+      
+      const updatedUser = {
+        ...mockUser,
+        name: 'New Name',
+        email: 'newemail@example.com',
+        isVerified: false
+      };
+      
+      mockAuthRepository.updateName.mockResolvedValue(updatedUser);
+      mockAuthRepository.updateEmail.mockResolvedValue(updatedUser);
+      mockAuthRepository.updatePassword.mockResolvedValue(updatedUser);
+      mockAuthRepository.findById.mockResolvedValueOnce(mockUser)
+        .mockResolvedValueOnce(updatedUser);
+
+      const result = await service.updateProfile(userId, updateData);
+
+      expect(result.message).toBe('Profile updated successfully');
+      expect(authRepository.updateName).toHaveBeenCalled();
+      expect(authRepository.updateEmail).toHaveBeenCalled();
+      expect(authRepository.updatePassword).toHaveBeenCalled();
+      expect(mailService.sendVerificationEmail).toHaveBeenCalled();
+      expect(mailService.sendPasswordChangedNotification).toHaveBeenCalled();
+    });
+
   });
 });

@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { User } from '../users/schemas/user.schema';
 import { Model } from 'mongoose';
@@ -195,33 +195,36 @@ export class AuthService {
   }
 
   // Reset password
-  async resetPassword(token: string, newPassword: string): Promise<{ message: string }> {
+  async resetPassword(
+    token: string,
+    newPassword: string,
+  ): Promise<{ message: string }> {
     try {
       // Verify token
       const decoded = this.jwtService.verify(token, {
-        secret: process.env.JWT_RESET_SECRET
+        secret: process.env.JWT_RESET_SECRET,
       });
-  
+
       // Ensure it's a password reset token
       if (decoded.type !== 'password_reset') {
         throw new BadRequestException('Invalid token type');
       }
-  
+
       // Find user
       const user = await this.authRepository.findByEmail(decoded.email);
       if (!user) {
         throw new BadRequestException('Invalid token');
       }
-  
+
       // Hash new password
       const hashedPassword = await bcrypt.hash(newPassword, 10);
-  
+
       // Update password
       await this.authRepository.updatePassword(user.id, hashedPassword);
-  
+
       // Send notification email
       await this.mailService.sendPasswordChangedNotification(user.email);
-  
+
       return { message: 'Password has been reset successfully' };
     } catch (error) {
       throw new BadRequestException('Invalid or expired token');
@@ -239,6 +242,85 @@ export class AuthService {
     });
 
     return { message: 'Logged out successfully' };
+  }
+
+  // Get user profile
+  async getProfile(userId: string): Promise<Omit<User, 'password'>> {
+    try {
+      const user = await this.authRepository.findById(userId);
+      if (!user) {
+        throw new NotFoundException('User not found');
+      }
+  
+      const { password, ...userWithoutPassword } = user.toObject();
+      return userWithoutPassword;
+  
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new BadRequestException('Failed to get user data');
+    }
+  }
+
+  //  Update Profile 
+  async updateProfile(userId: string, updateDto: Partial<User>) : Promise<{message: string; user: Partial<User>}> {
+    try {
+      const user = await this.authRepository.findById(userId);
+      if (!user) {
+        throw new NotFoundException('User not found');
+      }
+
+      // If email is being updated
+      if (updateDto.email && updateDto.email !== user.email) {
+        const existingUser = await this.authRepository.findByEmail(updateDto.email);
+        if (existingUser) {
+          throw new BadRequestException('Email already in use');
+        }
+
+       const update = await this.authRepository.updateEmail(userId, updateDto.email);
+        if (!update) {
+          throw new BadRequestException('Failed to update email');
+        }
+        // Generate Verification Token
+        const verificationToken = this.jwtService.sign(
+          { email: updateDto.email },
+          { expiresIn: '5m' },
+        );
+
+        await this.mailService.sendVerificationEmail(updateDto.email, verificationToken);
+      }
+
+      //  If name is being updated
+      if (updateDto.name && updateDto.name !== user.name) {
+        const update = await this.authRepository.updateName(userId, updateDto.name);
+        if (!update) {
+          throw new BadRequestException('Failed to update name');
+        }
+      }
+
+      // If password is being updated
+      if (updateDto.password) {
+        const hashedPassword = await bcrypt.hash(updateDto.password, 10);
+        await this.authRepository.updatePassword(userId, hashedPassword);
+        await this.mailService.sendPasswordChangedNotification(user.email);
+      }
+
+      // Return success message
+      return {
+        message: 'Profile updated successfully',
+        user: {
+          email: updateDto.email || user.email,
+          name: updateDto.name || user.name,
+        },
+      };
+
+    } catch (error) {
+      if (error instanceof NotFoundException || error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException('Failed to update profile');
+    }
   }
 
   /*
