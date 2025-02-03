@@ -303,6 +303,7 @@ export class AuthService {
       if (updateDto.password) {
         const hashedPassword = await bcrypt.hash(updateDto.password, 10);
         await this.authRepository.updatePassword(userId, hashedPassword);
+        await this.mailService.sendPasswordChangedNotification(user.email);
       }
 
       // Return success message
