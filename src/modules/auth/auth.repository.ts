@@ -4,7 +4,7 @@ import { User } from '../users/schemas/user.schema';
 import { Model } from 'mongoose';
 
 @Injectable()
-export class AuthRepository {
+export class AuthRepository{
   constructor(@InjectModel(User.name) private userModel: Model<User>) {}
 
   async findByEmail(email: string): Promise<User | null> {
@@ -14,6 +14,25 @@ export class AuthRepository {
   async create(user: Partial<User>): Promise<User> {
     const newUser = new this.userModel(user);
     return newUser.save();
+  }
+
+  async updateEmail(userId: string, email: string): Promise<User> {
+    return this.userModel.findByIdAndUpdate(
+      userId,
+      { 
+        email,
+        isVerified: false 
+      },
+      { new: true }
+    ).exec();
+  }
+
+  async updateName(userId: string, name: string): Promise<User> {
+    return this.userModel.findByIdAndUpdate(
+      userId,
+      { name },
+      { new: true }
+    ).exec();
   }
 
   async updatePassword(userId: string, hashedPassword: string): Promise<void> {

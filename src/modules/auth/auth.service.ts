@@ -263,6 +263,65 @@ export class AuthService {
     }
   }
 
+  //  Update Profile 
+  async updateProfile(userId: string, updateDto: Partial<User>) : Promise<{message: string; user: Partial<User>}> {
+    try {
+      const user = await this.authRepository.findById(userId);
+      if (!user) {
+        throw new NotFoundException('User not found');
+      }
+
+      // If email is being updated
+      if (updateDto.email && updateDto.email !== user.email) {
+        const existingUser = await this.authRepository.findByEmail(updateDto.email);
+        if (existingUser) {
+          throw new BadRequestException('Email already in use');
+        }
+
+       const update = await this.authRepository.updateEmail(userId, updateDto.email);
+        if (!update) {
+          throw new BadRequestException('Failed to update email');
+        }
+        // Generate Verification Token
+        const verificationToken = this.jwtService.sign(
+          { email: updateDto.email },
+          { expiresIn: '5m' },
+        );
+
+        await this.mailService.sendVerificationEmail(updateDto.email, verificationToken);
+      }
+
+      //  If name is being updated
+      if (updateDto.name && updateDto.name !== user.name) {
+        const update = await this.authRepository.updateName(userId, updateDto.name);
+        if (!update) {
+          throw new BadRequestException('Failed to update name');
+        }
+      }
+
+      // If password is being updated
+      if (updateDto.password) {
+        const hashedPassword = await bcrypt.hash(updateDto.password, 10);
+        await this.authRepository.updatePassword(userId, hashedPassword);
+      }
+
+      // Return success message
+      return {
+        message: 'Profile updated successfully',
+        user: {
+          email: updateDto.email || user.email,
+          name: updateDto.name || user.name,
+        },
+      };
+
+    } catch (error) {
+      if (error instanceof NotFoundException || error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException('Failed to update profile');
+    }
+  }
+
   /*
    * Helper functions
    */

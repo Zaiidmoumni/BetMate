@@ -5,6 +5,7 @@ import {
   HttpCode,
   HttpStatus,
   Post,
+  Put,
   Query,
   Request,
   Res,
@@ -84,5 +85,11 @@ export class AuthController {
   @Get('me')
   async getProfile(@Request() req) {    
     return this.authService.getProfile(req.user.userId);
+  }
+
+  @UseGuards(AccessTokenGuard)
+  @Put('update-profile')
+  async updateProfile(@Request() req, @Body() updateDto: Partial<User>) {
+    return this.authService.updateProfile(req.user.userId, updateDto);
   }
 }
