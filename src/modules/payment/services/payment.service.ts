@@ -1,29 +1,25 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
-import {
-  TransactionStatus,
-  TransactionType,
-  DepositResponse,
-} from '../transaction.schema';
-import { MollieService, PaymentData } from './mollie.service';
+import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 import { TransactionRepository } from '../repositories/transaction.repository';
 import { UserBalanceRepository } from '../repositories/user-balance.repository';
+import { MollieService } from './mollie.service';
 import { ConfigService } from '@nestjs/config';
+import { DepositResponse, Transaction, TransactionStatus, TransactionType } from '../transaction.schema';
 
 @Injectable()
 export class PaymentService {
   private readonly logger = new Logger(PaymentService.name);
+
   constructor(
-    private transactionRepository: TransactionRepository, 
+    private transactionRepository: TransactionRepository,
     private userBalanceRepository: UserBalanceRepository,
     private mollieService: MollieService,
-    private configService: ConfigService,
+    private configService: ConfigService
   ) {}
 
-  // Initialize a deposit transaction
   async initiateDeposit(
     userId: string,
     amount: number,
-    paymentMethod: string,
+    paymentMethod: string
   ): Promise<DepositResponse> {
     // Validate amount
     this.validateDepositAmount(amount);
@@ -34,56 +30,50 @@ export class PaymentService {
       amount,
       type: TransactionType.DEPOSIT,
       status: TransactionStatus.INITIATED,
-      paymentMethod,
+      paymentMethod
     });
 
     try {
       // Create Mollie payment
       const payment = await this.mollieService.createPayment({
         amount,
-        currency: 'EUR',
+        paymentMethod,
         description: `Deposit to account - ${transaction._id}`,
-        transactionId: transaction._id.toString(),
+        metadata: { transactionId: transaction._id }
       });
 
+      const transactionId = transaction._id.toString()
+
       // Update transaction with payment reference
-      await this.transactionRepository.updateReference(
-        transaction._id.toString(),
-        payment.paymentId,
-      );
-      await this.transactionRepository.updateStatus(
-        transaction._id.toString(),
-        TransactionStatus.PENDING,
-      );
+      await this.transactionRepository.updateReference(transactionId, payment.id);
+      await this.transactionRepository.updateStatus(transactionId, TransactionStatus.PENDING);
 
       return {
-        transactionId: transaction._id.toString(),
-        checkoutUrl: payment.paymentUrl,
-        status: transaction.status as TransactionStatus,
+        transactionId: transactionId,
+        checkoutUrl: payment._links.checkout.href,
+        status: TransactionStatus.PENDING
       };
     } catch (error) {
       await this.transactionRepository.updateStatus(
         transaction._id.toString(),
         TransactionStatus.FAILED,
-        error.message,
+        error.message
       );
       throw new BadRequestException('Failed to initialize payment');
     }
   }
 
-  // Handle Mollie webhook
   async handlePaymentWebhook(webhookData: any) {
     const { id: molliePaymentId } = webhookData;
-
+    
     try {
       const molliePayment = await this.mollieService.getPayment(molliePaymentId);
-      const transaction = await this.transactionRepository.findByReference(
-        molliePaymentId,
-      );
+      const transaction = await this.transactionRepository.findByReference(molliePaymentId);
 
       if (!transaction) {
-        throw new BadRequestException('Transaction not found');
+        throw new NotFoundException('Transaction not found');
       }
+
       const newStatus = this.mapMollieStatus(molliePayment.status);
       
       if (newStatus === TransactionStatus.COMPLETED && 
@@ -106,9 +96,6 @@ export class PaymentService {
       throw error;
     }
   }
-  /* 
-  ** Helper functions
-  */
 
   private validateDepositAmount(amount: number) {
     const minAmount = this.configService.get<number>('MIN_DEPOSIT_AMOUNT', 10);
@@ -134,5 +121,20 @@ export class PaymentService {
     return statusMap[mollieStatus] || TransactionStatus.PROCESSING;
   }
 
+  // Query methods
+  async getTransaction(id: string): Promise<Transaction> {
+    const transaction = await this.transactionRepository.findById(id);
+    if (!transaction) {
+      throw new NotFoundException('Transaction not found');
+    }
+    return transaction;
+  }
 
+  async getUserTransactions(userId: string): Promise<Transaction[]> {
+    return this.transactionRepository.getUserTransactions(userId);
+  }
+
+  async getUserBalance(userId: string): Promise<number> {
+    return this.userBalanceRepository.getUserBalance(userId);
+  }
 }

@@ -1,73 +1,45 @@
-import createMollieClient from '@mollie/api-client';
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
+import { createMollieClient, Payment as MolliePayment } from '@mollie/api-client';
 import { ConfigService } from '@nestjs/config';
 
-export interface PaymentData {
-  amount: number;
-  currency: string;
-  description: string;
-  transactionId: string;
-  paymentMethod?: string;
-}
-
 @Injectable()
-export class MollieService implements OnModuleInit {
-  private mollieClient: any;
+export class MollieService {
+  private readonly client;
   private readonly logger = new Logger(MollieService.name);
 
-  constructor(private configService: ConfigService) {}
-
-  onModuleInit() {
-    const apiKey = this.configService.get<string>('mollie.apiKey');
-    if (!apiKey) {
-      throw new Error('Mollie API key is not configured!');
-    }
-
-    this.mollieClient = createMollieClient({ apiKey });
+  constructor(private configService: ConfigService) {
+    this.client = createMollieClient({
+      apiKey: this.configService.get<string>('MOLLIE_API_KEY')
+    });
   }
 
-  async getAvailablePaymentMethods() {
+  async createPayment(params: {
+    amount: number;
+    paymentMethod: string;
+    description: string;
+    metadata: any;
+  }): Promise<MolliePayment> {
     try {
-      const methods = await this.mollieClient.methods.list();
-      return methods.map((method) => ({
-        id: method.id,
-        name: method.description,
-        image: method.image.size2x,
-        minAmount: method.minimumAmount,
-        maxAmount: method.maximumAmount,
-      }));
-    } catch (error) {
-      throw new Error(`Failed to fetch payment methods: ${error.message}`);
-    }
-  }
-
-  async createPayment(paymentData: PaymentData) {
-    try {
-      const payment = await this.mollieClient.create({
+      return await this.client.payments.create({
         amount: {
-          value: paymentData.amount.toFixed(2),
-          currency: paymentData.currency,
+          currency: 'EUR',
+          value: params.amount.toFixed(2)
         },
-        method: paymentData.paymentMethod,
-        description: paymentData.description,
-        redirectUrl: `${this.configService.get('mollie.redirectUrl')}/${paymentData.transactionId}`,
-        webhookUrl: `${this.configService.get('mollie.webhookUrl')}/payment/webhook`,
+        method: params.paymentMethod,
+        description: params.description,
+        redirectUrl: `${this.configService.get('APP_URL')}/payment/return`,
+        webhookUrl: `${this.configService.get('APP_URL')}/payment/webhook`,
+        metadata: params.metadata
       });
-      this.logger.log(`Payment created with ID: ${payment.id}`);
-      return {
-        paymentId: payment.id,
-        paymentUrl: payment.getPaymentUrl(),
-        status: payment.status,
-      };
     } catch (error) {
       this.logger.error('Failed to create Mollie payment:', error);
-      throw new Error(`Failed to create payment: ${error.message}`);
+      throw error;
     }
   }
 
-  async getPayment(paymentId: string) {
+  async getPayment(paymentId: string): Promise<MolliePayment> {
     try {
-      return await this.mollieClient.payments.get(paymentId);
+      return await this.client.payments.get(paymentId);
     } catch (error) {
       this.logger.error(`Failed to get payment ${paymentId}:`, error);
       throw error;
