@@ -3,7 +3,7 @@ import { TransactionRepository } from '../repositories/transaction.repository';
 import { UserBalanceRepository } from '../repositories/user-balance.repository';
 import { MollieService } from './mollie.service';
 import { ConfigService } from '@nestjs/config';
-import { DepositResponse, Transaction, TransactionStatus, TransactionType } from '../transaction.schema';
+import { DepositResponse, Transaction, TransactionStatus, TransactionType, WithdrawalResponse } from '../transaction.schema';
 
 @Injectable()
 export class PaymentService {
@@ -97,6 +97,101 @@ export class PaymentService {
     }
   }
 
+  async initiateWithdrawal(
+    userId: string,
+    amount: number,
+    paymentMethod: string,
+    bankAccount?: string
+  ): Promise<WithdrawalResponse> {
+    // Validate amount
+    this.validateWithdrawalAmount(amount);
+
+    // Check balance
+    const hasBalance = await this.userBalanceRepository.checkSufficientBalance(userId, amount);
+    if (!hasBalance) {
+      throw new BadRequestException('Insufficient balance');
+    }
+
+    // Create withdrawal transaction
+    const transaction = await this.transactionRepository.create({
+      userId,
+      amount,
+      type: TransactionType.WITHDRAWAL,
+      status: TransactionStatus.INITIATED,
+      paymentMethod
+    });
+
+    const transactionId = transaction._id.toString();
+
+    try {
+      // Process payout via Mollie
+      const payout = await this.mollieService.createPayout({
+        amount,
+        bankAccount: bankAccount || await this.userBalanceRepository.getUserBankAccount(userId),
+        description: `Withdrawal from account - ${transactionId}`,
+        metadata: { transactionId }
+      });
+
+      // Update transaction with payout reference
+      await this.transactionRepository.updateReference(transactionId, payout.id);
+      await this.transactionRepository.updateStatus(transactionId, TransactionStatus.PROCESSING);
+
+      // Deduct balance immediately - will be restored if payout fails
+      await this.userBalanceRepository.decrementBalance(userId, amount);
+
+      return {
+        transactionId,
+        status: TransactionStatus.PROCESSING,
+        estimatedCompletionTime: this.getEstimatedCompletionTime()
+      };
+    } catch (error) {
+      await this.transactionRepository.updateStatus(
+        transactionId,
+        TransactionStatus.FAILED,
+        error.message
+      );
+      throw new BadRequestException('Failed to process withdrawal: ' + error.message);
+    }
+  }
+  async handleWithdrawalWebhook(webhookData: any) {
+    const { id: molliePayoutId } = webhookData;
+    
+    try {
+      const molliePayout = await this.mollieService.getPayout(molliePayoutId);
+      const transaction = await this.transactionRepository.findByReference(molliePayoutId);
+
+      if (!transaction) {
+        throw new NotFoundException('Transaction not found');
+      }
+
+      const newStatus = this.mapMollieStatus(molliePayout.status);
+      
+      // If the withdrawal failed, restore the user's balance
+      if (newStatus === TransactionStatus.FAILED && 
+          transaction.status !== TransactionStatus.FAILED) {
+        await this.userBalanceRepository.incrementBalance(
+          transaction.userId,
+          transaction.amount
+        );
+      }
+
+      await this.transactionRepository.updateStatus(
+        transaction._id.toString(),
+        newStatus,
+        newStatus === TransactionStatus.FAILED ? `Payout ${molliePayout.status}` : undefined
+      );
+
+      return { processed: true };
+    } catch (error) {
+      this.logger.error('Withdrawal webhook processing error:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Helper methods
+   */
+
   private validateDepositAmount(amount: number) {
     const minAmount = this.configService.get<number>('MIN_DEPOSIT_AMOUNT', 10);
     const maxAmount = this.configService.get<number>('MAX_DEPOSIT_AMOUNT', 10000);
@@ -104,6 +199,16 @@ export class PaymentService {
     if (amount < minAmount || amount > maxAmount) {
       throw new BadRequestException(
         `Deposit amount must be between ${minAmount} and ${maxAmount}`
+      );
+    }
+  }
+  private validateWithdrawalAmount(amount: number) {
+    const minAmount = this.configService.get<number>('MIN_WITHDRAWAL_AMOUNT', 10);
+    const maxAmount = this.configService.get<number>('MAX_WITHDRAWAL_AMOUNT', 10000);
+
+    if (amount < minAmount || amount > maxAmount) {
+      throw new BadRequestException(
+        `Withdrawal amount must be between ${minAmount} and ${maxAmount}`
       );
     }
   }
@@ -121,7 +226,15 @@ export class PaymentService {
     return statusMap[mollieStatus] || TransactionStatus.PROCESSING;
   }
 
-  // Query methods
+  private getEstimatedCompletionTime(): string {
+    // Return estimated time (e.g., 1-2 business days)
+    const businessDays = this.configService.get<number>('WITHDRAWAL_PROCESSING_DAYS', 2);
+    return `${businessDays} business day${businessDays > 1 ? 's' : ''}`;
+  }
+  
+  /**
+   * Query Methods
+   */
   async getTransaction(id: string): Promise<Transaction> {
     const transaction = await this.transactionRepository.findById(id);
     if (!transaction) {

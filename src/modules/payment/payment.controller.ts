@@ -5,6 +5,8 @@ import {
   Post,
   Request,
   Res,
+  Get,
+  Param,
   UseGuards,
 } from '@nestjs/common';
 import { PaymentService } from './services/payment.service';
@@ -22,9 +24,7 @@ export class PaymentController {
     @Request() req,
   ) {
     if (!depositData.amount || !depositData.paymentMethod) {
-      throw new BadRequestException(
-        'Amount and payment method are reqauired !',
-      );
+      throw new BadRequestException('Amount and payment method are required!');
     }
 
     const userId = req.user.userId;
@@ -36,9 +36,66 @@ export class PaymentController {
     );
   }
 
+  @Post('withdraw')
+  @UseGuards(AccessTokenGuard)
+  async initiateWithdrawal(
+    @Body() withdrawalData: { 
+      amount: number; 
+      paymentMethod: string;
+      bankAccount?: string;
+    },
+    @Request() req,
+  ) {
+    if (!withdrawalData.amount || !withdrawalData.paymentMethod) {
+      throw new BadRequestException('Amount and payment method are required!');
+    }
+    
+    const userId = req.user.userId;
+    
+    return this.paymentService.initiateWithdrawal(
+      userId,
+      withdrawalData.amount,
+      withdrawalData.paymentMethod,
+      withdrawalData.bankAccount
+    );
+  }
+
   @Post('webhook')
   async handlePaymentWebhook(@Body() webhookData: any, @Res() res: Response) {
     await this.paymentService.handlePaymentWebhook(webhookData);
     return res.status(200).send();
+  }
+
+  @Post('withdrawal-webhook')
+  async handleWithdrawalWebhook(@Body() webhookData: any, @Res() res: Response) {
+    await this.paymentService.handleWithdrawalWebhook(webhookData);
+    return res.status(200).send();
+  }
+
+  @Get('transaction/:id')
+  @UseGuards(AccessTokenGuard)
+  async getTransaction(@Param('id') id: string, @Request() req) {
+    const transaction = await this.paymentService.getTransaction(id);
+    
+    // Ensure users can only access their own transactions
+    if (transaction.userId.toString() !== req.user.userId) {
+      throw new BadRequestException('Unauthorized access to transaction');
+    }
+    
+    return transaction;
+  }
+
+  @Get('transactions')
+  @UseGuards(AccessTokenGuard)
+  async getUserTransactions(@Request() req) {
+    const userId = req.user.userId;
+    return this.paymentService.getUserTransactions(userId);
+  }
+
+  @Get('balance')
+  @UseGuards(AccessTokenGuard)
+  async getUserBalance(@Request() req) {
+    const userId = req.user.userId;
+    return { balance: await this.paymentService.getUserBalance(userId) };
   }
 }

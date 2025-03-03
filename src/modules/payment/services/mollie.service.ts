@@ -45,4 +45,44 @@ export class MollieService {
       throw error;
     }
   }
+
+  async createPayout(params: {
+    amount: number;
+    bankAccount: string;
+    description: string;
+    metadata: any;
+  }): Promise<any> {
+    try {
+      return await this.client.performHttpCall(
+        'POST',
+        'payouts',
+        {
+          amount: {
+            currency: 'EUR',
+            value: params.amount.toFixed(2)
+          },
+          description: params.description,
+          metadata: params.metadata,
+          bankAccount: {
+            iban: params.bankAccount,
+            owner: {
+              name: params.metadata.ownerName || 'Account Owner'
+            }
+          }
+        }
+      );
+    } catch (error) {
+      this.logger.error('Failed to create Mollie payout:', error);
+      throw error;
+    }
+  }
+
+  async getPayout(payoutId: string): Promise<any> {
+    try {
+      return await this.client.payouts.get(payoutId);
+    } catch (error) {
+      this.logger.error(`Failed to get payout ${payoutId}:`, error);
+      throw error;
+    }
+  }
 }

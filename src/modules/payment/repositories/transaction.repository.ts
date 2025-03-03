@@ -53,4 +53,14 @@ export class TransactionRepository {
       .sort({ createdAt: -1 })
       .exec();
   }
+  
+  async getPendingWithdrawals(): Promise<Transaction[]> {
+    return this.transactionModel
+      .find({
+        type: 'withdrawal',
+        status: { $in: [TransactionStatus.INITIATED, TransactionStatus.PENDING, TransactionStatus.PROCESSING] }
+      })
+      .sort({ createdAt: 1 })
+      .exec();
+  }
 }

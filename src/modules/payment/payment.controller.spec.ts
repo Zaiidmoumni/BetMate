@@ -1,8 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { PaymentController } from '../payment.controller';
-import { PaymentService } from '../services/payment.service';
+import { PaymentController } from './payment.controller';
+import { PaymentService } from './services/payment.service';
 import { BadRequestException } from '@nestjs/common';
-import { TransactionStatus } from '../transaction.schema';
+import { TransactionStatus } from './transaction.schema';
 import { Response } from 'express';
 
 describe('PaymentController', () => {

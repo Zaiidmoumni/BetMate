@@ -25,6 +25,12 @@ export type DepositResponse = {
   status: TransactionStatus;
 };
 
+export interface WithdrawalResponse {
+  transactionId: string;
+  status: TransactionStatus;
+  estimatedCompletionTime: string;
+}
+
 @Schema({ timestamps: true })
 export class Transaction extends Document {
   @Prop({ required: true, type: MongooseSchema.Types.ObjectId, ref: 'User' })

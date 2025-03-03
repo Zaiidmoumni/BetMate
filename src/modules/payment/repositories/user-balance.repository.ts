@@ -34,4 +34,13 @@ export class UserBalanceRepository {
     const user = await this.userModel.findById(userId);
     return user?.balance >= amount;
   }
+
+  async getUserBankAccount(userId: string):Promise<string> {
+    const user = await this.userModel.findById(userId);
+    return user?.bankAccount 
+  }
+
+  async setBankAccount(userId:string):Promise<void> {
+
+  }
 }
