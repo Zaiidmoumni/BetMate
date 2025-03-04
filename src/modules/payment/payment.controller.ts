@@ -12,6 +12,7 @@ import {
 import { PaymentService } from './services/payment.service';
 import { AccessTokenGuard } from '@/guards/accessToken.guard';
 import { Response } from 'express';
+import { WithdrawalDto } from './dto/withdrawal.dto';
 
 @Controller('payment')
 export class PaymentController {
@@ -38,25 +39,11 @@ export class PaymentController {
 
   @Post('withdraw')
   @UseGuards(AccessTokenGuard)
-  async initiateWithdrawal(
-    @Body() withdrawalData: { 
-      amount: number; 
-      paymentMethod: string;
-      bankAccount?: string;
-    },
-    @Request() req,
-  ) {
-    if (!withdrawalData.amount || !withdrawalData.paymentMethod) {
-      throw new BadRequestException('Amount and payment method are required!');
-    }
-    
-    const userId = req.user.userId;
-    
+  async initiateWithdrawal(@Request() req, @Body() withdrawalDto: WithdrawalDto) {
     return this.paymentService.initiateWithdrawal(
-      userId,
-      withdrawalData.amount,
-      withdrawalData.paymentMethod,
-      withdrawalData.bankAccount
+      req.user.userId,
+      withdrawalDto.amount,
+      withdrawalDto.bankAccount
     );
   }
 
@@ -67,9 +54,8 @@ export class PaymentController {
   }
 
   @Post('withdrawal-webhook')
-  async handleWithdrawalWebhook(@Body() webhookData: any, @Res() res: Response) {
-    await this.paymentService.handleWithdrawalWebhook(webhookData);
-    return res.status(200).send();
+  async handleWithdrawalWebhook(@Body() webhookData: any) {
+    return this.paymentService.handleWithdrawalWebhook(webhookData);
   }
 
   @Get('transaction/:id')

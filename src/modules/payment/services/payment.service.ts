@@ -100,11 +100,11 @@ export class PaymentService {
   async initiateWithdrawal(
     userId: string,
     amount: number,
-    paymentMethod: string,
-    bankAccount?: string
+    bankAccount: string
   ): Promise<WithdrawalResponse> {
     // Validate amount
     this.validateWithdrawalAmount(amount);
+    console.log(userId)
 
     // Check balance
     const hasBalance = await this.userBalanceRepository.checkSufficientBalance(userId, amount);
@@ -118,25 +118,33 @@ export class PaymentService {
       amount,
       type: TransactionType.WITHDRAWAL,
       status: TransactionStatus.INITIATED,
-      paymentMethod
+      paymentMethod: 'banktransfer'
     });
 
     const transactionId = transaction._id.toString();
 
     try {
-      // Process payout via Mollie
-      const payout = await this.mollieService.createPayout({
+      // Get user information for metadata
+      // const userInfo = await this.userBalanceRepository.getUserInfo(userId);
+      
+      // Process withdrawal via Mollie
+      const withdrawal = await this.mollieService.createPayout({
         amount,
-        bankAccount: bankAccount || await this.userBalanceRepository.getUserBankAccount(userId),
+        bankAccount,
         description: `Withdrawal from account - ${transactionId}`,
-        metadata: { transactionId }
+        metadata: { 
+          transactionId,
+          userId,
+          userName:  'Account Owner',
+          userEmail: 'No email provided'
+        }
       });
 
-      // Update transaction with payout reference
-      await this.transactionRepository.updateReference(transactionId, payout.id);
+      // Update transaction with withdrawal reference
+      await this.transactionRepository.updateReference(transactionId, withdrawal.id);
       await this.transactionRepository.updateStatus(transactionId, TransactionStatus.PROCESSING);
 
-      // Deduct balance immediately - will be restored if payout fails
+      // Deduct balance immediately - will be restored if withdrawal fails
       await this.userBalanceRepository.decrementBalance(userId, amount);
 
       return {
@@ -154,31 +162,39 @@ export class PaymentService {
     }
   }
   async handleWithdrawalWebhook(webhookData: any) {
-    const { id: molliePayoutId } = webhookData;
+    const { id: withdrawalId } = webhookData;
     
     try {
-      const molliePayout = await this.mollieService.getPayout(molliePayoutId);
-      const transaction = await this.transactionRepository.findByReference(molliePayoutId);
+      const withdrawalDetails = await this.mollieService.getPayout(withdrawalId);
+      const transaction = await this.transactionRepository.findByReference(withdrawalId);
 
       if (!transaction) {
         throw new NotFoundException('Transaction not found');
       }
 
-      const newStatus = this.mapMollieStatus(molliePayout.status);
+      // For withdrawal, we need to handle statuses differently
+      // In a real implementation, you might have an admin approve/deny withdrawals
+      let newStatus;
       
-      // If the withdrawal failed, restore the user's balance
-      if (newStatus === TransactionStatus.FAILED && 
-          transaction.status !== TransactionStatus.FAILED) {
+      if (withdrawalDetails.status === 'expired' || withdrawalDetails.status === 'canceled' || withdrawalDetails.status === 'failed') {
+        newStatus = TransactionStatus.FAILED;
+        
+        // Restore the user's balance
         await this.userBalanceRepository.incrementBalance(
           transaction.userId,
           transaction.amount
         );
+      } else if (withdrawalDetails.status === 'paid') {
+        // This would happen after manual processing
+        newStatus = TransactionStatus.COMPLETED;
+      } else {
+        newStatus = TransactionStatus.PROCESSING;
       }
-
+      
       await this.transactionRepository.updateStatus(
         transaction._id.toString(),
         newStatus,
-        newStatus === TransactionStatus.FAILED ? `Payout ${molliePayout.status}` : undefined
+        newStatus === TransactionStatus.FAILED ? `Withdrawal ${withdrawalDetails.status}` : undefined
       );
 
       return { processed: true };

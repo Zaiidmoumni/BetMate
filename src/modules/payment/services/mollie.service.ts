@@ -53,33 +53,36 @@ export class MollieService {
     metadata: any;
   }): Promise<any> {
     try {
-      return await this.client.performHttpCall(
-        'POST',
-        'payouts',
-        {
-          amount: {
-            currency: 'EUR',
-            value: params.amount.toFixed(2)
-          },
-          description: params.description,
-          metadata: params.metadata,
-          bankAccount: {
-            iban: params.bankAccount,
-            owner: {
-              name: params.metadata.ownerName || 'Account Owner'
-            }
-          }
-        }
-      );
+      // Store bank account info in metadata for manual processing
+      const metadata = {
+        ...params.metadata,
+        bankAccount: params.bankAccount,
+        isWithdrawal: true
+      };
+
+      // Create a payment with banktransfer method
+      // This will be handled as a withdrawal internally by your system
+      const payment = await this.client.payments.create({
+        amount: {
+          currency: 'EUR',
+          value: params.amount.toFixed(2)
+        },
+        method: 'banktransfer',
+        description: params.description,
+        metadata: metadata,
+        redirectUrl: `${this.configService.get('APP_URL')}/payment/return`,
+        webhookUrl: `${this.configService.get('APP_URL')}/payment/withdrawal-webhook`
+      });
+      
+      return payment;
     } catch (error) {
-      this.logger.error('Failed to create Mollie payout:', error);
+      this.logger.error('Failed to create withdrawal:', error);
       throw error;
     }
   }
-
   async getPayout(payoutId: string): Promise<any> {
     try {
-      return await this.client.payouts.get(payoutId);
+      return await this.client.payments.get(payoutId);
     } catch (error) {
       this.logger.error(`Failed to get payout ${payoutId}:`, error);
       throw error;
