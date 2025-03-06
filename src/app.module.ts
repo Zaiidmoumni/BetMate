@@ -7,6 +7,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { MailModule } from './modules/mail/mail.module';
 import { PaymentController } from './modules/payment/payment.controller';
 import { paymentModule } from './modules/payment/payment.module';
+import { OddsApiModule } from './modules/odds-api/odds-api.module';
 
 @Module({
   imports: [
@@ -22,7 +23,8 @@ import { paymentModule } from './modules/payment/payment.module';
     }),
     MailModule,
     AuthModule,
-    paymentModule
+    paymentModule,
+    OddsApiModule
   ],
   controllers: [AppController],
   providers: [AppService],
