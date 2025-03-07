@@ -5,8 +5,9 @@ import { AuthModule } from './modules/auth/auth.module';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { MailModule } from './modules/mail/mail.module';
-import { PaymentController } from './modules/payment/payment.controller';
 import { paymentModule } from './modules/payment/payment.module';
+import { OddsApiModule } from './modules/odds-api/odds-api.module';
+import { EventsModule } from './modules/events/events.module';
 
 @Module({
   imports: [
@@ -22,7 +23,9 @@ import { paymentModule } from './modules/payment/payment.module';
     }),
     MailModule,
     AuthModule,
-    paymentModule
+    paymentModule,
+    OddsApiModule,
+    EventsModule
   ],
   controllers: [AppController],
   providers: [AppService],
