@@ -8,6 +8,7 @@ import { MailModule } from './modules/mail/mail.module';
 import { paymentModule } from './modules/payment/payment.module';
 import { OddsApiModule } from './modules/odds-api/odds-api.module';
 import { EventsModule } from './modules/events/events.module';
+import { BetsModule } from './modules/bets/bets.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { EventsModule } from './modules/events/events.module';
     paymentModule,
     OddsApiModule,
     EventsModule,
+    BetsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
