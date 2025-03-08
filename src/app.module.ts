@@ -25,7 +25,7 @@ import { EventsModule } from './modules/events/events.module';
     AuthModule,
     paymentModule,
     OddsApiModule,
-    EventsModule
+    EventsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
