@@ -1,34 +1,34 @@
 import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
-import { BetsService } from './bets.service';
+import { BetService } from './bet.service';
 import { CreateBetDto } from './dto/create-bet.dto';
 import { UpdateBetDto } from './dto/update-bet.dto';
 
-@Controller('bets')
-export class BetsController {
-  constructor(private readonly betsService: BetsService) {}
+@Controller('bet')
+export class BetController {
+  constructor(private readonly betService: BetService) {}
 
   @Post()
   create(@Body() createBetDto: CreateBetDto) {
-    return this.betsService.create(createBetDto);
+    return this.betService.create(createBetDto);
   }
 
   @Get()
   findAll() {
-    return this.betsService.findAll();
+    return this.betService.findAll();
   }
 
   @Get(':id')
   findOne(@Param('id') id: string) {
-    return this.betsService.findOne(+id);
+    return this.betService.findOne(+id);
   }
 
   @Patch(':id')
   update(@Param('id') id: string, @Body() updateBetDto: UpdateBetDto) {
-    return this.betsService.update(+id, updateBetDto);
+    return this.betService.update(+id, updateBetDto);
   }
 
   @Delete(':id')
   remove(@Param('id') id: string) {
-    return this.betsService.remove(+id);
+    return this.betService.remove(+id);
   }
 }

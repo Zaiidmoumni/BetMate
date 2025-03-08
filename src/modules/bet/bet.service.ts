@@ -3,13 +3,13 @@ import { CreateBetDto } from './dto/create-bet.dto';
 import { UpdateBetDto } from './dto/update-bet.dto';
 
 @Injectable()
-export class BetsService {
+export class BetService {
   create(createBetDto: CreateBetDto) {
     return 'This action adds a new bet';
   }
 
   findAll() {
-    return `This action returns all bets`;
+    return `This action returns all bet`;
   }
 
   findOne(id: number) {
