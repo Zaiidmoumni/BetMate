@@ -1,4 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
+import { HydratedDocument } from 'mongoose';
 
 @Schema({ timestamps: true })
 export class Bet {
@@ -10,7 +11,6 @@ export class Bet {
       matchId: String,
       betOutcome: String,
       odds: Number,
-      stake: Number,
       status: {
         type: String,
         enum: ['Pending', 'Won', 'Lost'],
@@ -22,7 +22,6 @@ export class Bet {
     matchId: string;
     betOutcome: string;
     odds: number;
-    stake: number;
     status: 'Pending' | 'Won' | 'Lost';
   }[];
 
@@ -39,5 +38,5 @@ export class Bet {
   status: 'Pending' | 'Won' | 'Lost';  
 }
 
-export type BetDocument = Bet & Document;
+export type BetDocument = HydratedDocument<Bet>;
 export const BetSchema = SchemaFactory.createForClass(Bet);

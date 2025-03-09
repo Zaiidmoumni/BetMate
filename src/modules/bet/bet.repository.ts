@@ -16,17 +16,17 @@ export class BetRepository {
 
     // Find a bet by it's ID
     async findById(betId: string): Promise<Bet | null>{
-        return this.betModel.findById(betId);
+        return this.betModel.findById(betId).exec();
     }
 
     // Find bets by match ID
-    async findByMatch(matchId: string): Promise<Bet[]>{
-        return this.betModel.find({ 'matches.matchId': matchId})
+    async findByMatch(matchId: string): Promise<BetDocument[]>{
+        return this.betModel.find({ 'matches.matchId': matchId}).exec();
     }
 
     // Update a bet's data 
     async update(betId: string, updateData: Partial<Bet>):Promise<Bet| null> {
-        return this.betModel.findByIdAndUpdate(betId, updateData, {new: true})
+        return this.betModel.findByIdAndUpdate(betId, updateData, {new: true}).exec();
     }
 
 
