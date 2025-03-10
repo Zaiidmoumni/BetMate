@@ -22,10 +22,7 @@ export class BetController {
   @Post()
   async placeBet(
     @Body()
-    betData: {
-      stake: number;
-      matches: { matchId: string; betOutcome: string; odds: number }[];
-    },
+    betData: CreateBetDto,
     @Request() req,
   ) {
     const userId = req.user.userId;
@@ -34,5 +31,8 @@ export class BetController {
 
   @UseGuards(AccessTokenGuard)
   @Get(':betId')
+  async getBetById(@Param('betId') betId: string) {
+    return this.betService.getBetById(betId)
+  }
 }
 
