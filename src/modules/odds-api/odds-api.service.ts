@@ -119,6 +119,7 @@ export class OddsApiService {
     return this.formatScoresData(data);
   }
 
+
   /*
    * Helper Methods
    * These methods are used to fetch data from the Odds API
@@ -212,42 +213,5 @@ export class OddsApiService {
     }));
   }
 
-  // Check a single match results
-  private checkMatchScores(matchScore, betOutcome) {
-    if (!matchScore || !matchScore.completed) {
-      return {
-        status: 'Pending',
-        message: 'Match is not completed yet.',
-      };
-    }
-
-    const homeScore = matchScore.scores.homeScore;
-    const awayScore = matchScore.scores.awayScore;
-
-    let status = 'Lost';
-
-    // Parse betOutcome (format: "1", "X", "2", "over_..", "under_..".)
-    if (betOutcome === '1' && homeScore > awayScore) {
-      status = 'Won'; // Home win
-    } else if (betOutcome === 'X' && homeScore === awayScore) {
-      status = 'Won'; // Draw
-    } else if (betOutcome === '2' && homeScore < awayScore) {
-      status = 'Won'; // Away win
-    } else if (betOutcome.startsWith('over_')) {
-      const line = parseFloat(betOutcome.replace('over_', ''));
-      if (homeScore + awayScore > line) {
-        status = 'Won';
-      }
-    } else if (betOutcome.startsWith('under_')) {
-      const line = parseFloat(betOutcome.replace('under_', ''));
-      if (homeScore + awayScore < line) {
-        status = 'Won';
-      }
-    }
-
-    return {
-      status,
-      matchScore
-    } 
-  }
+  
 }

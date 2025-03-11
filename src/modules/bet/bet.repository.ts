@@ -24,10 +24,16 @@ export class BetRepository {
         return this.betModel.find({ 'matches.matchId': matchId}).exec();
     }
 
+    // Find bets by status
+    async findByStatus(status: string): Promise<BetDocument[]>{
+        return this.betModel.find({ status: status }).exec();
+    }
+
     // Update a bet's data 
     async update(betId: string, updateData: Partial<Bet>):Promise<Bet| null> {
         return this.betModel.findByIdAndUpdate(betId, updateData, {new: true}).exec();
     }
+
 
 
 }
