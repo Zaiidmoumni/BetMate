@@ -136,6 +136,43 @@ export class BetService {
     }
   }
 
+  // Check a single bet
+  async checkBetById(betId: string) {
+    try {
+      const bet = await this.betRepository.findById(betId);
+
+      if(!bet){
+        throw new NotFoundException('Bet not found');
+      }
+
+      // Get all scores from each supported league
+      const supportedLeagues = await this.oddsApiService.getSupportedLeagues();
+      const allScores = {};
+      for (const league of supportedLeagues) {
+        try {
+          const scores = await this.oddsApiService.getLeagueScores(
+            league.key,
+            3,
+          );
+          allScores[league.key] = scores;
+        } catch (error) {
+          console.error(
+            `Failed to fetch scores for league ${league.key}:`,
+            error,
+          );
+        }
+      }
+
+      return await this.checkAndUpdateBet(bet, allScores);
+    } catch (error) {
+      throw new HttpException(
+        `Failed to check bet: ${error.message}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+
   /*
    * Helper Methods
    * These methods are used to check and update bets
@@ -158,19 +195,19 @@ export class BetService {
 
     // Update the status of each match
     for (const match of bet.matches) {
-      // Skip if already determined 
-      if (match.status !== 'Pending'){
-        if(match.status === 'Lost') {
+      // Skip if already determined
+      if (match.status !== 'Pending') {
+        if (match.status === 'Lost') {
           allMatchesWon = false;
         }
         continue;
-      };
+      }
 
       // Find the match in our cached scores
       const matchScore = this.findMatchScore(match.matchId, allScores);
 
       // If match not found or not completed, keep as pending
-      if(!matchScore || !matchScore.completed){
+      if (!matchScore || !matchScore.completed) {
         allMatchesCimpleted = false;
         continue;
       }
@@ -179,13 +216,13 @@ export class BetService {
       const result = this.checkMatchResult(matchScore, match.betOutcome);
       match.status = result.status;
 
-      if(match.status === 'Lost'){
+      if (match.status === 'Lost') {
         allMatchesWon = false;
       }
     }
 
     // Update the overall bet status
-    if(allMatchesCimpleted){
+    if (allMatchesCimpleted) {
       bet.status = allMatchesWon ? 'Won' : 'Lost';
     }
 
@@ -193,22 +230,22 @@ export class BetService {
     return {
       betId: bet._id,
       status: bet.status,
-      matches: bet.matches.map(m => ({
+      matches: bet.matches.map((m) => ({
         matchId: m.matchId,
         betOutcome: m.betOutcome,
         odds: m.odds,
-        status: m.status
+        status: m.status,
       })),
       stake: bet.stake,
       totalOdds: bet.totalOdds,
       potentialPayout: bet.potentialPayout,
-      actualPayout: bet.status === 'Won' ? bet.potentialPayout : 0
+      actualPayout: bet.status === 'Won' ? bet.potentialPayout : 0,
     };
   }
   // Find match score in cached score data
   private findMatchScore(matchId: string, allScores) {
     for (const leagueKey in allScores) {
-      const match = allScores[leagueKey].find(match => match.id === matchId);
+      const match = allScores[leagueKey].find((match) => match.id === matchId);
       if (match) {
         return match;
       }
@@ -217,41 +254,40 @@ export class BetService {
   }
 
   // Check a single match results
-    private checkMatchResult(matchScore, betOutcome) {
-      if (!matchScore || !matchScore.completed) {
-        return {
-          status: 'Pending',
-          message: 'Match is not completed yet.',
-        };
-      }
-  
-      const homeScore = matchScore.scores.homeScore;
-      const awayScore = matchScore.scores.awayScore;
-  
-      let status = 'Lost';
-  
-      // Parse betOutcome (format: "1", "X", "2", "over_..", "under_..".)
-      if (betOutcome === '1' && homeScore > awayScore) {
-        status = 'Won'; // Home win
-      } else if (betOutcome === 'X' && homeScore === awayScore) {
-        status = 'Won'; // Draw
-      } else if (betOutcome === '2' && homeScore < awayScore) {
-        status = 'Won'; // Away win
-      } else if (betOutcome.startsWith('over_')) {
-        const line = parseFloat(betOutcome.replace('over_', ''));
-        if (homeScore + awayScore > line) {
-          status = 'Won';
-        }
-      } else if (betOutcome.startsWith('under_')) {
-        const line = parseFloat(betOutcome.replace('under_', ''));
-        if (homeScore + awayScore < line) {
-          status = 'Won';
-        }
-      }
-  
+  private checkMatchResult(matchScore, betOutcome): { status: 'Pending' | 'Won' | 'Lost', message?: string, matchScore?: any } {
+    if (!matchScore || !matchScore.completed) {
       return {
-        status,
-        matchScore
-      } 
+        status: 'Pending',
+        message: 'Match has not been completed yet',
+      };
     }
+  
+    const homeScore = matchScore.scores.homeScore;
+    const awayScore = matchScore.scores.awayScore;
+    let status: 'Won' | 'Lost' = 'Lost';
+  
+    // Parse betOutcome (format: "1", "X", "2", "over_..", "under_..".)
+    if (betOutcome === '1' && homeScore > awayScore) {
+      status = 'Won'; // Home win
+    } else if (betOutcome === 'X' && homeScore === awayScore) {
+      status = 'Won'; // Draw
+    } else if (betOutcome === '2' && homeScore < awayScore) {
+      status = 'Won'; // Away win
+    } else if (betOutcome.startsWith('over_')) {
+      const line = parseFloat(betOutcome.replace('over_', ''));
+      if (homeScore + awayScore > line) {
+        status = 'Won';
+      }
+    } else if (betOutcome.startsWith('under_')) {
+      const line = parseFloat(betOutcome.replace('under_', ''));
+      if (homeScore + awayScore < line) {
+        status = 'Won';
+      }
+    }
+
+    return {
+      status,
+      matchScore,
+    };
+  }
 }

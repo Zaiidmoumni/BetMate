@@ -15,7 +15,7 @@ export class BetRepository {
     }
 
     // Find a bet by it's ID
-    async findById(betId: string): Promise<Bet | null>{
+    async findById(betId: string): Promise<BetDocument | null>{
         return this.betModel.findById(betId).exec();
     }
 
