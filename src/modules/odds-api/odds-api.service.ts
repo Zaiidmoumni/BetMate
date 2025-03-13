@@ -62,7 +62,7 @@ export class OddsApiService {
     if (!this.supportedLeagues.includes(leagueKey)) {
       throw new HttpException(
         'Unsupported league. Please use one of our supported football leagues.',
-        HttpStatus.BAD_REQUEST
+        HttpStatus.BAD_REQUEST,
       );
     }
 
@@ -73,72 +73,107 @@ export class OddsApiService {
   async getMatchById(matchId: string) {
     const url = `${this.apiUrl}/events/${matchId}/odds`;
     const { data } = await firstValueFrom(
-      this.httpService.get(url, {
-        params: {
-          apiKey: this.apiKey,
-          regions: 'eu',
-          markets: 'h2h,spreads,totals',
-          dateFormat: 'iso',
-          oddsFormat: 'decimal',
-        },
-      }).pipe(
-        catchError((error) => {
-          throw new HttpException(
-            `Failed to fetch match: ${error.message}`,
-            HttpStatus.BAD_GATEWAY,
-          );
-        }),
-      ),
+      this.httpService
+        .get(url, {
+          params: {
+            apiKey: this.apiKey,
+            regions: 'eu',
+            markets: 'h2h,spreads,totals',
+            dateFormat: 'iso',
+            oddsFormat: 'decimal',
+          },
+        })
+        .pipe(
+          catchError((error) => {
+            throw new HttpException(
+              `Failed to fetch match: ${error.message}`,
+              HttpStatus.BAD_GATEWAY,
+            );
+          }),
+        ),
     );
     return data;
   }
 
-  // Helper method to fetch odds from the API
+  // Get match results/scores
+  async getLeagueScores(sportKey: string, daysFrom: number = 1) {
+    const url = `${this.apiUrl}/sports/${sportKey}/scores`;
+    const { data } = await firstValueFrom(
+      this.httpService
+        .get(url, {
+          params: {
+            apiKey: this.apiKey,
+            daysFrom,
+            dateFormat: 'iso',
+          },
+        })
+        .pipe(
+          catchError((error) => {
+            throw new HttpException(
+              `Failed to fetch scores: ${error.message}`,
+              HttpStatus.BAD_GATEWAY,
+            );
+          }),
+        ),
+    );
+    return this.formatScoresData(data);
+  }
+
+
+  /*
+   * Helper Methods
+   * These methods are used to fetch data from the Odds API
+   * and format it for more consistent frontend use
+   */
+
+  // Fetch odds from the API
   private async fetchOddsForSport(
-    sportKey: string, 
-    regions: string = 'eu', 
+    sportKey: string,
+    regions: string = 'eu',
     markets: string = 'h2h,spreads,totals',
     dateFormat: string = 'iso',
-    oddsFormat: string = 'decimal'
+    oddsFormat: string = 'decimal',
   ) {
     const url = `${this.apiUrl}/sports/${sportKey}/odds`;
     const { data } = await firstValueFrom(
-      this.httpService.get(url, {
-        params: {
-          apiKey: this.apiKey,
-          regions,
-          markets,
-          dateFormat,
-          oddsFormat,
-        },
-      }).pipe(
-        catchError((error) => {
-          throw new HttpException(
-            `Failed to fetch matches: ${error.message}`,
-            HttpStatus.BAD_GATEWAY,
-          );
-        }),
-      ),
+      this.httpService
+        .get(url, {
+          params: {
+            apiKey: this.apiKey,
+            regions,
+            markets,
+            dateFormat,
+            oddsFormat,
+          },
+        })
+        .pipe(
+          catchError((error) => {
+            throw new HttpException(
+              `Failed to fetch matches: ${error.message}`,
+              HttpStatus.BAD_GATEWAY,
+            );
+          }),
+        ),
     );
     return data;
   }
 
-  // Format match data for more consistent frontend use
+  // Format match data 
   formatMatchData(matchData) {
-    return matchData.map(match => ({
+    return matchData.map((match) => ({
       id: match.id,
       leagueKey: match.sport_key,
       leagueTitle: match.sport_title,
       commenceTime: match.commence_time,
       homeTeam: match.home_team,
       awayTeam: match.away_team,
-      bookmakers: match.bookmakers.map(bookmaker => ({
+      bookmakers: match.bookmakers.map((bookmaker) => ({
         key: bookmaker.key,
         title: bookmaker.title,
         lastUpdate: bookmaker.last_update,
-        markets: bookmaker.markets.map(market => ({
+        markets: bookmaker.markets.map((market) => ({
           key: market.key,
-          outcomes: market.outcomes.map(outcome => ({
+          outcomes: market.outcomes.map((outcome) => ({
             name: outcome.name,
             price: outcome.price,
             point: outcome.point || null,
@@ -147,4 +182,36 @@ export class OddsApiService {
       })),
     }));
   }
+
+  // Format scores data 
+  private formatScoresData(scoresData) {
+    return scoresData.map((match) => ({
+      id: match.id,
+      sportKey: match.sport_key,
+      sportTitle: match.sport_title,
+      commenceTime: match.commence_time,
+      completed: match.completed,
+      homeTeam: match.home_team,
+      awayTeam: match.away_team,
+      // Soccer-specific scores format
+      scores: match.scores
+        ? {
+            homeScore: match.scores.find((s) => s.name === match.home_team)
+              ?.score,
+            awayScore: match.scores.find((s) => s.name === match.away_team)
+              ?.score,
+            // Additional soccer-specific data if available
+            homeScoreHalftime: match.scores.find(
+              (s) => s.name === match.home_team,
+            )?.score_halftime,
+            awayScoreHalftime: match.scores.find(
+              (s) => s.name === match.away_team,
+            )?.score_halftime,
+          }
+        : null,
+      lastUpdate: match.last_update,
+    }));
+  }
+
+  
 }

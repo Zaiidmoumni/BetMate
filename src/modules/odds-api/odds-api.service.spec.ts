@@ -91,6 +91,43 @@ describe('OddsApiService', () => {
     ],
   };
 
+  // New mock data for scores testing
+  const mockRawScores = [
+    {
+      id: 'match123',
+      sport_key: 'soccer_epl',
+      sport_title: 'Premier League',
+      commence_time: '2023-01-01T15:00:00Z',
+      completed: true,
+      home_team: 'Manchester United',
+      away_team: 'Liverpool',
+      scores: [
+        { name: 'Manchester United', score: 2, score_halftime: 1 },
+        { name: 'Liverpool', score: 1, score_halftime: 0 },
+      ],
+      last_update: '2023-01-01T17:00:00Z',
+    },
+  ];
+
+  const mockFormattedScores = [
+    {
+      id: 'match123',
+      sportKey: 'soccer_epl',
+      sportTitle: 'Premier League',
+      commenceTime: '2023-01-01T15:00:00Z',
+      completed: true,
+      homeTeam: 'Manchester United',
+      awayTeam: 'Liverpool',
+      scores: {
+        homeScore: 2,
+        awayScore: 1,
+        homeScoreHalftime: 1,
+        awayScoreHalftime: 0,
+      },
+      lastUpdate: '2023-01-01T17:00:00Z',
+    },
+  ];
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       imports: [
@@ -260,6 +297,109 @@ describe('OddsApiService', () => {
 
       // Act & Assert
       await expect(service.getMatchById(matchId)).rejects.toThrow(HttpException);
+    });
+  });
+
+  describe('getLeagueScores', () => {
+    it('should return scores for a specific league', async () => {
+      // Arrange
+      const leagueKey = 'soccer_epl';
+      const daysFrom = 2;
+      const response: AxiosResponse = {
+        data: mockRawScores,
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config: { url: `https://api.the-odds-api.com/v4/sports/${leagueKey}/scores` } as any,
+      };
+      
+      jest.spyOn(httpService, 'get').mockReturnValueOnce(of(response));
+
+      // Act
+      const result = await service.getLeagueScores(leagueKey, daysFrom);
+
+      // Assert
+      expect(result).toEqual(mockFormattedScores);
+      expect(httpService.get).toHaveBeenCalledWith(
+        `https://api.the-odds-api.com/v4/sports/${leagueKey}/scores`, 
+        { 
+          params: { 
+            apiKey: mockApiKey,
+            daysFrom,
+            dateFormat: 'iso',
+          } 
+        }
+      );
+    });
+
+    it('should use default daysFrom value if not provided', async () => {
+      // Arrange
+      const leagueKey = 'soccer_epl';
+      const response: AxiosResponse = {
+        data: mockRawScores,
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config: { url: `https://api.the-odds-api.com/v4/sports/${leagueKey}/scores` } as any,
+      };
+      
+      jest.spyOn(httpService, 'get').mockReturnValueOnce(of(response));
+
+      // Act
+      const result = await service.getLeagueScores(leagueKey);
+
+      // Assert
+      expect(result).toEqual(mockFormattedScores);
+      expect(httpService.get).toHaveBeenCalledWith(
+        `https://api.the-odds-api.com/v4/sports/${leagueKey}/scores`, 
+        { 
+          params: { 
+            apiKey: mockApiKey,
+            daysFrom: 1, // Default value
+            dateFormat: 'iso',
+          } 
+        }
+      );
+    });
+
+    it('should throw HttpException when API call fails', async () => {
+      // Arrange
+      const leagueKey = 'soccer_epl';
+      jest.spyOn(httpService, 'get').mockReturnValueOnce(
+        throwError(() => new Error('API error'))
+      );
+
+      // Act & Assert
+      await expect(service.getLeagueScores(leagueKey)).rejects.toThrow(HttpException);
+    });
+
+    it('should handle matches with no scores', async () => {
+      // Arrange
+      const leagueKey = 'soccer_epl';
+      const mockRawScoresNoScores = [{
+        ...mockRawScores[0],
+        scores: null
+      }];
+      const expectedFormattedResult = [{
+        ...mockFormattedScores[0],
+        scores: null
+      }];
+      
+      const response: AxiosResponse = {
+        data: mockRawScoresNoScores,
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config: { url: `https://api.the-odds-api.com/v4/sports/${leagueKey}/scores` } as any,
+      };
+      
+      jest.spyOn(httpService, 'get').mockReturnValueOnce(of(response));
+
+      // Act
+      const result = await service.getLeagueScores(leagueKey);
+
+      // Assert
+      expect(result).toEqual(expectedFormattedResult);
     });
   });
 
