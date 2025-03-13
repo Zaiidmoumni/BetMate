@@ -25,6 +25,6 @@ import { PaymentController } from "./payment.controller";
         TransactionRepository,
         UserBalanceRepository
     ],
-    exports: [PaymentService]
+    exports: [PaymentService, UserBalanceRepository]
 })
 export class paymentModule {}

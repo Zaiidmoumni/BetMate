@@ -3,16 +3,22 @@ import {
   HttpException,
   HttpStatus,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { BetRepository } from './bet.repository';
 import { Bet, BetDocument } from './bet.schema';
 import { OddsApiService } from '../odds-api/odds-api.service';
+import { UserBalanceRepository } from '../payment/repositories/user-balance.repository';
+import { Cron } from '@nestjs/schedule';
 
 @Injectable()
 export class BetService {
+    private readonly logger = new Logger(BetService.name);
+
   constructor(
     private readonly betRepository: BetRepository,
+    private readonly userBalanceRepository: UserBalanceRepository,
     private readonly oddsApiService: OddsApiService,
   ) {}
 
@@ -30,6 +36,11 @@ export class BetService {
       throw new BadRequestException('At least one match is required');
     if (betData.stake <= 1)
       throw new BadRequestException('Stake must be greater than zero');
+
+    const userBalance = await this.userBalanceRepository.getUserBalance(userId);
+    if (userBalance < betData.stake) {
+      throw new BadRequestException('Insufficient balance');
+    }
 
     // Compute total odds
     const totalOdds = betData.matches.reduce(
@@ -53,6 +64,9 @@ export class BetService {
       potentialPayout,
       status: 'Pending',
     });
+
+    // Deduct user balance
+    await this.userBalanceRepository.decrementBalance(userId, betData.stake);
 
     return bet;
   }
@@ -90,7 +104,9 @@ export class BetService {
   }
 
   // Check all pending bets
+  @Cron('0 */10 * * * *')
   async checkPendingBets() {
+    this.logger.log('✅ CRON JOB TRIGGERED - Checking pending bets...');
     try {
       // Get all pending bets
       const pendingBets = await this.betRepository.findByStatus('Pending');
@@ -141,7 +157,7 @@ export class BetService {
     try {
       const bet = await this.betRepository.findById(betId);
 
-      if(!bet){
+      if (!bet) {
         throw new NotFoundException('Bet not found');
       }
 
@@ -171,7 +187,6 @@ export class BetService {
       );
     }
   }
-
 
   /*
    * Helper Methods
@@ -226,6 +241,14 @@ export class BetService {
       bet.status = allMatchesWon ? 'Won' : 'Lost';
     }
 
+    // Increment user balance if bet won
+    if (bet.status === 'Won') {
+      await this.userBalanceRepository.incrementBalance(
+        bet.userId.toString(),
+        bet.potentialPayout,
+      );
+    }
+
     await bet.save();
     return {
       betId: bet._id,
@@ -254,18 +277,25 @@ export class BetService {
   }
 
   // Check a single match results
-  private checkMatchResult(matchScore, betOutcome): { status: 'Pending' | 'Won' | 'Lost', message?: string, matchScore?: any } {
+  private checkMatchResult(
+    matchScore,
+    betOutcome,
+  ): {
+    status: 'Pending' | 'Won' | 'Lost';
+    message?: string;
+    matchScore?: any;
+  } {
     if (!matchScore || !matchScore.completed) {
       return {
         status: 'Pending',
         message: 'Match has not been completed yet',
       };
     }
-  
+
     const homeScore = matchScore.scores.homeScore;
     const awayScore = matchScore.scores.awayScore;
     let status: 'Won' | 'Lost' = 'Lost';
-  
+
     // Parse betOutcome (format: "1", "X", "2", "over_..", "under_..".)
     if (betOutcome === '1' && homeScore > awayScore) {
       status = 'Won'; // Home win

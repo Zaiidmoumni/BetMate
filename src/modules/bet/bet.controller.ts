@@ -52,10 +52,5 @@ export class BetController {
     return this.betService.checkPendingBets()
   }
 
-  // Cron job to check pending bets every hour
-  @Cron('0 */1 * * *')
-  async handleCron() {
-    await this.betService.checkPendingBets();
-  }
 }
 
