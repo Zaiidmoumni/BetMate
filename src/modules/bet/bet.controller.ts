@@ -31,6 +31,21 @@ export class BetController {
     return this.betService.placeBet(userId, betData);
   }
 
+    // Manually check all bets
+    @UseGuards(AccessTokenGuard)
+    @Get('check')
+    async checkAllBets() {
+      return this.betService.checkPendingBets()
+    }
+  
+    // Find user's bets
+    @UseGuards(AccessTokenGuard)
+    @Get('history')
+    async getUserBets(@Request() req) {
+      const userId = req.user.userId;
+      return this.betService.getUserBets(userId)
+    }
+
   // Find a specific bet
   @UseGuards(AccessTokenGuard)
   @Get(':betId')
@@ -45,12 +60,7 @@ export class BetController {
     return this.betService.checkBetById(betId)
   }
 
-  // Manuallu check all bets
-  @UseGuards(AccessTokenGuard)
-  @Get('check')
-  async checkAllBets() {
-    return this.betService.checkPendingBets()
-  }
+
 
 }
 

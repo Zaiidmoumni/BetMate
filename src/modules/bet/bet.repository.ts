@@ -24,6 +24,11 @@ export class BetRepository {
         return this.betModel.find({ 'matches.matchId': matchId}).exec();
     }
 
+    // Find bets by user ID
+    async findByUser(userId: string): Promise<BetDocument[]>{
+        return this.betModel.find({ userId: userId }).exec();
+    }
+
     // Find bets by status
     async findByStatus(status: string): Promise<BetDocument[]>{
         return this.betModel.find({ status: status }).exec();

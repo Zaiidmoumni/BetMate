@@ -104,7 +104,7 @@ export class BetService {
   }
 
   // Check all pending bets
-  @Cron('0 */10 * * * *')
+  @Cron('0 */30 * * * *')
   async checkPendingBets() {
     this.logger.log('✅ CRON JOB TRIGGERED - Checking pending bets...');
     try {
@@ -186,6 +186,11 @@ export class BetService {
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
+  }
+
+  // Get all user's bets 
+  async getUserBets(userId: string): Promise<Bet[]> {
+    return this.betRepository.findByUser(userId);
   }
 
   /*
