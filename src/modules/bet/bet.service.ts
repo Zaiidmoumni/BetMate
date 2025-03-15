@@ -193,6 +193,11 @@ export class BetService {
     return this.betRepository.findByUser(userId);
   }
 
+  // Get all bets
+  async getAllBets(): Promise<Bet[]> {
+    return this.betRepository.findAll();
+  }
+
   /*
    * Helper Methods
    * These methods are used to check and update bets

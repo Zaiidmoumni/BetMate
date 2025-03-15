@@ -117,7 +117,7 @@ export class AuthService {
     }
 
     // Generate both tokens
-    const accessToken = await this.generateAccessToken(user.id);
+    const accessToken = await this.generateAccessToken(user);
     const refreshToken = await this.generateRefreshToken(user.id);
 
     // Set refresh token in HTTP-only cookie
@@ -339,9 +339,9 @@ export class AuthService {
   }
 
   // Generate JWT access token
-  private async generateAccessToken(userId: string): Promise<string> {
+  private async generateAccessToken(user:User): Promise<string> {
     return this.jwtService.signAsync(
-      { sub: userId },
+      { sub: user._id, email: user.email, role: user.role },
       {
         secret: process.env.JWT_SECRET,
         expiresIn: process.env.JWT_EXPIRATION,

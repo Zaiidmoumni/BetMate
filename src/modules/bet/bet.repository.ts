@@ -14,6 +14,11 @@ export class BetRepository {
         return bet.save();
     }
 
+    // Find all bets
+    async findAll(): Promise<BetDocument[]>{
+        return this.betModel.find().exec();
+    }
+
     // Find a bet by it's ID
     async findById(betId: string): Promise<BetDocument | null>{
         return this.betModel.findById(betId).exec();

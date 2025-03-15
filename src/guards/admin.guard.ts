@@ -10,6 +10,9 @@ export class AdminGuard implements CanActivate {
       throw new ForbiddenException('User not authenticated');
     }
 
+    console.log(request.user);
+    
+
     // Check if user has admin role
     if (request.user.role !== 'admin') {
       throw new ForbiddenException('Access denied. Admin privileges required.');
