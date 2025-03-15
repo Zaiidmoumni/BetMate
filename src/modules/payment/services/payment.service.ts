@@ -259,6 +259,10 @@ export class PaymentService {
     return transaction;
   }
 
+  async getAllTransactions(): Promise<Transaction[]> {
+    return this.transactionRepository.getAllTransactions();
+  }
+
   async getUserTransactions(userId: string): Promise<Transaction[]> {
     return this.transactionRepository.getUserTransactions(userId);
   }
