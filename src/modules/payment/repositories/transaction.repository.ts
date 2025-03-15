@@ -53,6 +53,10 @@ export class TransactionRepository {
       .sort({ createdAt: -1 })
       .exec();
   }
+
+  async getAllTransactions(): Promise<Transaction[]> {
+    return this.transactionModel.find().sort({ createdAt: -1 }).exec();
+  }
   
   async getPendingWithdrawals(): Promise<Transaction[]> {
     return this.transactionModel

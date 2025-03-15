@@ -13,6 +13,7 @@ import { PaymentService } from './services/payment.service';
 import { AccessTokenGuard } from '@/guards/accessToken.guard';
 import { Response } from 'express';
 import { WithdrawalDto } from './dto/withdrawal.dto';
+import { AdminGuard } from '@/guards/admin.guard';
 
 @Controller('payment')
 export class PaymentController {
@@ -71,11 +72,17 @@ export class PaymentController {
     return transaction;
   }
 
-  @Get('transactions')
+  @Get('history')
   @UseGuards(AccessTokenGuard)
   async getUserTransactions(@Request() req) {
     const userId = req.user.userId;
     return this.paymentService.getUserTransactions(userId);
+  }
+
+  @Get('all')
+  @UseGuards(AccessTokenGuard, AdminGuard) 
+  async getAllTransactions() {
+    return this.paymentService.getAllTransactions();
   }
 
   @Get('balance')
