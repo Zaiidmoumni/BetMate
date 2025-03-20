@@ -38,37 +38,46 @@ export class PaymentController {
     );
   }
 
-  @Post('withdraw')
-  @UseGuards(AccessTokenGuard)
-  async initiateWithdrawal(@Request() req, @Body() withdrawalDto: WithdrawalDto) {
-    return this.paymentService.initiateWithdrawal(
-      req.user.userId,
-      withdrawalDto.amount,
-      withdrawalDto.bankAccount
-    );
-  }
-
   @Post('webhook')
   async handlePaymentWebhook(@Body() webhookData: any, @Res() res: Response) {
     await this.paymentService.handlePaymentWebhook(webhookData);
     return res.status(200).send();
   }
 
-  @Post('withdrawal-webhook')
-  async handleWithdrawalWebhook(@Body() webhookData: any) {
-    return this.paymentService.handleWithdrawalWebhook(webhookData);
+  @Post('withdraw')
+  @UseGuards(AccessTokenGuard)
+  async initiateWithdrawal(
+    @Body() withdrawalData: WithdrawalDto,
+    @Request() req,
+  ) {
+    const userId = req.user.userId;
+    return this.paymentService.initiateWithdrawal(userId, withdrawalData);
+  }
+
+  @Post('withdraw/cancel/:id')
+  @UseGuards(AccessTokenGuard)
+  async cancelWithdrawal(@Param('id') id: string, @Request() req) {
+    const userId = req.user.userId;
+    return this.paymentService.cancelWithdrawal(id, userId);
+  }
+
+  // Admin endpoint to process withdrawals
+  @Post('withdraw/process/:id')
+  @UseGuards(AccessTokenGuard, AdminGuard)
+  async processWithdrawal(@Param('id') id: string) {
+    return this.paymentService.processWithdrawal(id);
   }
 
   @Get('transaction/:id')
   @UseGuards(AccessTokenGuard)
   async getTransaction(@Param('id') id: string, @Request() req) {
     const transaction = await this.paymentService.getTransaction(id);
-    
+
     // Ensure users can only access their own transactions
     if (transaction.userId.toString() !== req.user.userId) {
       throw new BadRequestException('Unauthorized access to transaction');
     }
-    
+
     return transaction;
   }
 

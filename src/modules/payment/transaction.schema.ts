@@ -31,6 +31,23 @@ export interface WithdrawalResponse {
   estimatedCompletionTime: string;
 }
 
+export class TransactionMetadata {
+  @Prop({ type: String, required: false })
+  bankName?: string;
+
+  @Prop({ type: String, required: false })
+  accountHolder?: string;
+
+  @Prop({ type: String, required: false })
+  iban?: string;
+
+  @Prop({ type: String, required: false })
+  bic?: string;
+
+  @Prop({ type: String, required: false })
+  description?: string;
+}
+
 @Schema({ timestamps: true })
 export class Transaction extends Document {
   @Prop({ required: true, type: MongooseSchema.Types.ObjectId, ref: 'User' })
@@ -60,6 +77,9 @@ export class Transaction extends Document {
 
   @Prop()
   providerTransactionId?: string;
+
+  @Prop({ type: Object, required: false })
+  metadata?: Record<string, any>;
 }
 
 export const TransactionSchema = SchemaFactory.createForClass(Transaction);

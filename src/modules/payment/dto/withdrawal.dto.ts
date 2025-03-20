@@ -1,4 +1,4 @@
-import { IsNumber, IsString, Min, Max, MinLength } from 'class-validator';
+import { IsNumber, IsString, Min, Max, MinLength, IsNotEmpty, IsOptional } from 'class-validator';
 
 export class WithdrawalDto {
   @IsNumber()
@@ -6,9 +6,25 @@ export class WithdrawalDto {
   @Max(10000)
   amount: number;
 
+  @IsNotEmpty()
   @IsString()
-  @MinLength(15)
-  bankAccount: string;
+  bankName: string;
+
+  @IsNotEmpty()
+  @IsString()
+  accountHolder: string;
+
+  @IsNotEmpty()
+  @IsString()
+  iban: string;
+
+  @IsOptional()
+  @IsString()
+  bic?: string;
+
+  @IsOptional()
+  @IsString()
+  description?: string;
 }
 
 export class ApproveWithdrawalDto {

@@ -93,7 +93,6 @@ export class AuthService {
     }
   }
 
-  // Login user
   async login(
     loginDto: LoginDto,
     res: Response,
