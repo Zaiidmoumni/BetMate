@@ -4,6 +4,7 @@ import { UserBalanceRepository } from '../repositories/user-balance.repository';
 import { MollieService } from './mollie.service';
 import { ConfigService } from '@nestjs/config';
 import { DepositResponse, Transaction, TransactionStatus, TransactionType, WithdrawalResponse } from '../transaction.schema';
+import { WithdrawalDto } from '../dto/withdrawal.dto';
 
 @Injectable()
 export class PaymentService {
@@ -96,112 +97,157 @@ export class PaymentService {
       throw error;
     }
   }
-
+  
   async initiateWithdrawal(
     userId: string,
-    amount: number,
-    bankAccount: string
+    withdrawalData: WithdrawalDto
   ): Promise<WithdrawalResponse> {
-    // Validate amount
+    const { amount, bankName, accountHolder, iban, bic, description } = withdrawalData;
+    
+    // Validate withdrawal amount
     this.validateWithdrawalAmount(amount);
-    console.log(userId)
-
-    // Check balance
-    const hasBalance = await this.userBalanceRepository.checkSufficientBalance(userId, amount);
-    if (!hasBalance) {
-      throw new BadRequestException('Insufficient balance');
+    
+    // Check user balance
+    const userBalance = await this.userBalanceRepository.getUserBalance(userId);
+    if (userBalance < amount) {
+      throw new BadRequestException('Insufficient balance for withdrawal');
     }
-
+    
     // Create withdrawal transaction
     const transaction = await this.transactionRepository.create({
       userId,
       amount,
       type: TransactionType.WITHDRAWAL,
       status: TransactionStatus.INITIATED,
-      paymentMethod: 'banktransfer'
+      paymentMethod: 'bank_transfer',
+      metadata: {
+        bankName,
+        accountHolder,
+        iban,
+        bic,
+        description: description || `Withdrawal of ${amount}`
+      }
     });
-
-    const transactionId = transaction._id.toString();
-
+    
     try {
-      // Get user information for metadata
-      // const userInfo = await this.userBalanceRepository.getUserInfo(userId);
-      
-      // Process withdrawal via Mollie
-      const withdrawal = await this.mollieService.createPayout({
-        amount,
-        bankAccount,
-        description: `Withdrawal from account - ${transactionId}`,
-        metadata: { 
-          transactionId,
-          userId,
-          userName:  'Account Owner',
-          userEmail: 'No email provided'
-        }
-      });
-
-      // Update transaction with withdrawal reference
-      await this.transactionRepository.updateReference(transactionId, withdrawal.id);
-      await this.transactionRepository.updateStatus(transactionId, TransactionStatus.PROCESSING);
-
-      // Deduct balance immediately - will be restored if withdrawal fails
+      // Deduct from user balance immediately to prevent overdrafts
       await this.userBalanceRepository.decrementBalance(userId, amount);
-
+      
+      // Set status to pending for admin review
+      await this.transactionRepository.updateStatus(
+        transaction._id.toString(),
+        TransactionStatus.PENDING
+      );
+      
       return {
-        transactionId,
-        status: TransactionStatus.PROCESSING,
+        transactionId: transaction._id.toString(),
+        status: TransactionStatus.PENDING,
         estimatedCompletionTime: this.getEstimatedCompletionTime()
       };
     } catch (error) {
+      // If balance update fails, mark transaction as failed
+      await this.transactionRepository.updateStatus(
+        transaction._id.toString(),
+        TransactionStatus.FAILED,
+        error.message
+      );
+      throw new BadRequestException('Failed to process withdrawal');
+    }
+  }
+
+  async processWithdrawal(transactionId: string): Promise<Transaction> {
+    const transaction = await this.transactionRepository.findById(transactionId);
+    
+    if (!transaction) {
+      throw new NotFoundException('Withdrawal transaction not found');
+    }
+    
+    if (transaction.type !== TransactionType.WITHDRAWAL) {
+      throw new BadRequestException('Transaction is not a withdrawal');
+    }
+    
+    if (transaction.status !== TransactionStatus.PENDING) {
+      throw new BadRequestException(`Cannot process withdrawal in ${transaction.status} status`);
+    }
+    
+    // Update status to processing
+    await this.transactionRepository.updateStatus(
+      transactionId,
+      TransactionStatus.PROCESSING
+    );
+    
+    try {
+      const { bankName, accountHolder, iban, bic, description } = transaction.metadata || {};
+      
+      const payout = await this.mollieService.createPayout({
+        amount: transaction.amount,
+        bankAccount: {
+          holderName: accountHolder,
+          iban,
+          bic
+        },
+        description: description || `Withdrawal for user ${transaction.userId}`
+      });
+      
+      // Update transaction with payout reference
+      await this.transactionRepository.updateReference(transactionId, payout.id);
+      
+      await this.transactionRepository.updateStatus(
+        transactionId,
+        TransactionStatus.COMPLETED
+      );
+      
+      return this.transactionRepository.findById(transactionId);
+    } catch (error) {
+      // If payout fails, revert transaction status and refund balance
       await this.transactionRepository.updateStatus(
         transactionId,
         TransactionStatus.FAILED,
         error.message
       );
-      throw new BadRequestException('Failed to process withdrawal: ' + error.message);
+      
+      // Return amount to user balance
+      await this.userBalanceRepository.incrementBalance(
+        transaction.userId,
+        transaction.amount
+      );
+      
+      throw new BadRequestException(`Failed to process withdrawal: ${error.message}`);
     }
   }
-  async handleWithdrawalWebhook(webhookData: any) {
-    const { id: withdrawalId } = webhookData;
+  
+  async cancelWithdrawal(transactionId: string, userId: string): Promise<Transaction> {
+    const transaction = await this.transactionRepository.findById(transactionId);
     
-    try {
-      const withdrawalDetails = await this.mollieService.getPayout(withdrawalId);
-      const transaction = await this.transactionRepository.findByReference(withdrawalId);
-
-      if (!transaction) {
-        throw new NotFoundException('Transaction not found');
-      }
-
-      // For withdrawal, we need to handle statuses differently
-      // In a real implementation, you might have an admin approve/deny withdrawals
-      let newStatus;
-      
-      if (withdrawalDetails.status === 'expired' || withdrawalDetails.status === 'canceled' || withdrawalDetails.status === 'failed') {
-        newStatus = TransactionStatus.FAILED;
-        
-        // Restore the user's balance
-        await this.userBalanceRepository.incrementBalance(
-          transaction.userId,
-          transaction.amount
-        );
-      } else if (withdrawalDetails.status === 'paid') {
-        // This would happen after manual processing
-        newStatus = TransactionStatus.COMPLETED;
-      } else {
-        newStatus = TransactionStatus.PROCESSING;
-      }
-      
-      await this.transactionRepository.updateStatus(
-        transaction._id.toString(),
-        newStatus,
-        newStatus === TransactionStatus.FAILED ? `Withdrawal ${withdrawalDetails.status}` : undefined
-      );
-
-      return { processed: true };
-    } catch (error) {
-      this.logger.error('Withdrawal webhook processing error:', error);
-      throw error;
+    if (!transaction) {
+      throw new NotFoundException('Withdrawal transaction not found');
     }
+    
+    if (transaction.userId.toString() !== userId) {
+      throw new BadRequestException('Unauthorized access to transaction');
+    }
+    
+    if (transaction.type !== TransactionType.WITHDRAWAL) {
+      throw new BadRequestException('Transaction is not a withdrawal');
+    }
+    
+    if (![TransactionStatus.INITIATED, TransactionStatus.PENDING].includes(transaction.status)) {
+      throw new BadRequestException('Withdrawal can only be canceled when in initiated or pending status');
+    }
+    
+    // Update status to cancelled
+    await this.transactionRepository.updateStatus(
+      transactionId,
+      TransactionStatus.CANCELLED
+    );
+    
+    // Return amount to user balance
+    await this.userBalanceRepository.incrementBalance(
+      transaction.userId,
+      transaction.amount
+    );
+    
+    return this.transactionRepository.findById(transactionId);
   }
 
   /**
@@ -263,6 +309,9 @@ export class PaymentService {
     return this.transactionRepository.getUserTransactions(userId);
   }
 
+  async getPendingTransactions(): Promise<Transaction[]> {
+    return this.transactionRepository.getPendingWithdrawals();
+  }
   async getUserBalance(userId: string): Promise<number> {
     return this.userBalanceRepository.getUserBalance(userId);
   }

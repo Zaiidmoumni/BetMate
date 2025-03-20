@@ -15,6 +15,7 @@ export class TransactionRepository {
     type: TransactionType;
     status: TransactionStatus;
     paymentMethod: string;
+    metadata?: any;
   }): Promise<Transaction> {
     return this.transactionModel.create(data);
   }
