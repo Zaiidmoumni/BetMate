@@ -130,4 +130,85 @@ describe('MollieService', () => {
       await expect(service.getPayment(paymentId)).rejects.toThrow(error);
     });
   });
+
+  describe('createPayout', () => {
+    it('should throw error in production environment', async () => {
+      const payoutData = {
+        amount: 100,
+        bankAccount: {
+          holderName: 'John Doe',
+          iban: 'NL02ABNA0123456789',
+          bic: 'ABNANL2A',
+        },
+        description: 'Test payout',
+      };
+
+      // Mock production environment
+      configService.get.mockImplementation((key) => {
+        if (key === 'NODE_ENV') return 'production';
+        return undefined;
+      });
+
+      await expect(service.createPayout(payoutData)).rejects.toThrow('Production payouts not implemented');
+    });
+
+    it('should create a mock payout in non-production environment', async () => {
+      const payoutData = {
+        amount: 100,
+        bankAccount: {
+          holderName: 'John Doe',
+          iban: 'NL02ABNA0123456789',
+          bic: 'ABNANL2A',
+        },
+        description: 'Test payout',
+      };
+
+      // Mock non-production environment
+      configService.get.mockImplementation((key) => {
+        if (key === 'NODE_ENV') return 'development';
+        return undefined;
+      });
+
+      const result = await service.createPayout(payoutData);
+
+      expect(result).toHaveProperty('id');
+      expect(result).toHaveProperty('amount');
+      expect(result.amount).toEqual({
+        value: '100.00',
+        currency: 'EUR',
+      });
+      expect(result).toHaveProperty('description', 'Test payout');
+      expect(result).toHaveProperty('status', 'pending');
+      expect(result).toHaveProperty('_links');
+      expect(result).toHaveProperty('createdAt');
+    });
+
+    it('should include correct transaction ID format in mock payout', async () => {
+      const payoutData = {
+        amount: 100,
+        bankAccount: {
+          holderName: 'John Doe',
+          iban: 'NL02ABNA0123456789',
+        },
+        description: 'Test payout',
+      };
+
+      // Mock non-production environment
+      configService.get.mockImplementation((key) => {
+        if (key === 'NODE_ENV') return 'development';
+        return undefined;
+      });
+
+      // Mock Date.now to return a consistent value for testing
+      const dateSpy = jest.spyOn(Date, 'now').mockReturnValue(1234567890);
+
+      const result = await service.createPayout(payoutData);
+
+      expect(result.id).toBe('tr_payout_1234567890');
+      expect(result._links.self.href).toBe('https://api.mollie.com/v2/payments/tr_payout_1234567890');
+
+      // Restore the original Date.now implementation
+      dateSpy.mockRestore();
+    });
+  });
 });
