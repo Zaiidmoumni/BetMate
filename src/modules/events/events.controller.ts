@@ -24,4 +24,9 @@ export class EventsController {
     const match = await this.oddsApiService.getMatchById(matchId);
     return this.oddsApiService.formatMatchData([match])[0];
   }
+
+  // Get all matches
+  @Get()
+  async getAllMatches() {    
+    return await this.oddsApiService.getSimplifiedMatches();  }
 }

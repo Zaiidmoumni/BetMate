@@ -119,6 +119,73 @@ export class OddsApiService {
     return this.formatScoresData(data);
   }
 
+  // Get all matches
+  async getAllMatches() {    
+    const allMatches = await Promise.all(
+      this.supportedLeagues.map((league) => this.getMatchesByLeague(league)),
+    );
+    
+    return this.formatMatchData(
+      allMatches.reduce((acc, val) => acc.concat(val), []),
+    );
+  }
+
+  async getSimplifiedMatches(preferredBookmaker: string = 'pinnacle') {
+    const allMatches = await this.getAllMatches();
+    return allMatches.map((match) => {
+      // Find the preferred bookmaker, or use the first one if not found
+      const bookmaker =
+        match.bookmakers.find((b) => b.key === preferredBookmaker) ||
+        match.bookmakers[0];
+
+      // Get h2h market (basic win/lose/draw odds)
+      const h2hMarket = bookmaker?.markets.find((m) => m.key === 'h2h');
+
+      // Get totals market (over/under)
+      const totalsMarket = bookmaker?.markets.find((m) => m.key === 'totals');
+
+      
+      // Create simplified match object
+      return {
+        id: match.id,
+        league: {
+          key: match.leagueKey,
+          title: match.leagueTitle,
+        },
+        match: {
+          commenceTime: match.commenceTime,
+          homeTeam: match.homeTeam,
+          awayTeam: match.awayTeam,
+          displayName: `${match.homeTeam} vs ${match.awayTeam}`,
+        },
+        odds: {
+          provider: {
+            name: bookmaker?.title,
+            lastUpdate: bookmaker?.lastUpdate,
+          },
+          homeWin:
+            h2hMarket?.outcomes.find((o) => o.name === match.homeTeam)?.price ||
+            null,
+          awayWin:
+            h2hMarket?.outcomes.find((o) => o.name === match.awayTeam)?.price ||
+            null,
+          draw:
+            h2hMarket?.outcomes.find((o) => o.name === 'Draw')?.price || null,
+          overUnder: totalsMarket
+            ? {
+                point: totalsMarket.outcomes[0]?.point || null,
+                over:
+                  totalsMarket.outcomes.find((o) => o.name === 'Over')?.price ||
+                  null,
+                under:
+                  totalsMarket.outcomes.find((o) => o.name === 'Under')
+                    ?.price || null,
+              }
+            : null,
+        },
+      };
+    });
+  }
 
   /*
    * Helper Methods
@@ -158,7 +225,7 @@ export class OddsApiService {
     return data;
   }
 
-  // Format match data 
+  // Format match data
   formatMatchData(matchData) {
     return matchData.map((match) => ({
       id: match.id,
@@ -183,7 +250,7 @@ export class OddsApiService {
     }));
   }
 
-  // Format scores data 
+  // Format scores data
   private formatScoresData(scoresData) {
     return scoresData.map((match) => ({
       id: match.id,
@@ -212,6 +279,4 @@ export class OddsApiService {
       lastUpdate: match.last_update,
     }));
   }
-
-  
 }
