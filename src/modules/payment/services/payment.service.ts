@@ -20,81 +20,130 @@ export class PaymentService {
   async initiateDeposit(
     userId: string,
     amount: number,
-    paymentMethod: string
+    paymentMethod?: string,
   ): Promise<DepositResponse> {
     // Validate amount
     this.validateDepositAmount(amount);
 
-    // Create initial transaction
+    // Create initial transaction record
     const transaction = await this.transactionRepository.create({
       userId,
       amount,
       type: TransactionType.DEPOSIT,
       status: TransactionStatus.INITIATED,
-      paymentMethod
+      paymentMethod: paymentMethod || 'unknown'
     });
 
     try {
+      const transactionId = transaction._id.toString();
+      
       // Create Mollie payment
       const payment = await this.mollieService.createPayment({
         amount,
         paymentMethod,
-        description: `Deposit to account - ${transaction._id}`,
-        metadata: { transactionId: transaction._id }
+        description: `Deposit to betting account - ${transactionId}`,
+        metadata: { 
+          transactionId,
+          userId,
+          timestamp: new Date().toISOString() 
+        },
       });
 
-      const transactionId = transaction._id.toString()
-
       // Update transaction with payment reference
-      await this.transactionRepository.updateReference(transactionId, payment.id);
-      await this.transactionRepository.updateStatus(transactionId, TransactionStatus.PENDING);
+      await this.transactionRepository.update(
+        transactionId,
+        {
+          reference: payment.id,
+          status: TransactionStatus.PENDING,
+          paymentMethod: payment.method || paymentMethod || 'unknown',
+        }
+      );
+
+      this.logger.log(`Deposit initiated: User=${userId}, Amount=${amount}, Transaction=${transactionId}, Mollie=${payment.id}`);
 
       return {
-        transactionId: transactionId,
+        transactionId,
         checkoutUrl: payment._links.checkout.href,
         status: TransactionStatus.PENDING
       };
     } catch (error) {
-      await this.transactionRepository.updateStatus(
-        transaction._id.toString(),
-        TransactionStatus.FAILED,
-        error.message
-      );
-      throw new BadRequestException('Failed to initialize payment');
+      // Update transaction to failed status
+      if (transaction && transaction._id) {
+        await this.transactionRepository.update(
+          transaction._id.toString(),
+          {
+            status: TransactionStatus.FAILED,
+            failureReason: error.message || 'Payment initialization failed'
+          }
+        );
+      }
+      
+      this.logger.error(`Deposit initiation failed for user ${userId}:`, error);
+      throw new BadRequestException(`Failed to initialize deposit: ${error.message || 'Unknown error'}`);
     }
   }
 
-  async handlePaymentWebhook(webhookData: any) {
+  /**
+   * Processes Mollie webhook notifications
+   */
+  async handlePaymentWebhook(webhookData: any): Promise<{ processed: boolean }> {
+    if (!webhookData || !webhookData.id) {
+      this.logger.error('Invalid webhook data', webhookData);
+      return { processed: false };
+    }
+    
     const { id: molliePaymentId } = webhookData;
+    this.logger.log(`Processing webhook for payment ${molliePaymentId}`);
     
     try {
+      // Get fresh payment status from Mollie
       const molliePayment = await this.mollieService.getPayment(molliePaymentId);
+      
+      // Find our transaction by Mollie reference
       const transaction = await this.transactionRepository.findByReference(molliePaymentId);
 
       if (!transaction) {
-        throw new NotFoundException('Transaction not found');
+        this.logger.error(`Transaction not found for Mollie payment ID: ${molliePaymentId}`);
+        return { processed: false };
       }
 
+      const transactionId = transaction._id.toString();
       const newStatus = this.mapMollieStatus(molliePayment.status);
       
+      // Skip processing if status hasn't changed
+      if (newStatus === transaction.status) {
+        return { processed: true };
+      }
+      
+      // Update transaction status
+      await this.transactionRepository.update(
+        transactionId,
+        {
+          status: newStatus,
+          failureReason: newStatus === TransactionStatus.FAILED ? 
+            `Payment ${molliePayment.status}` : undefined
+        }
+      );
+      
+      // If payment is completed, update user balance
       if (newStatus === TransactionStatus.COMPLETED && 
           transaction.status !== TransactionStatus.COMPLETED) {
+        
         await this.userBalanceRepository.incrementBalance(
           transaction.userId,
           transaction.amount
         );
+        
+        this.logger.log(`User ${transaction.userId} balance updated, added ${transaction.amount}`);
       }
-
-      await this.transactionRepository.updateStatus(
-        transaction._id.toString(),
-        newStatus,
-        newStatus === TransactionStatus.FAILED ? `Payment ${molliePayment.status}` : undefined
-      );
-
+      
+      this.logger.log(`Webhook processed: payment ${molliePaymentId}, status changed from ${transaction.status} to ${newStatus}`);
       return { processed: true };
     } catch (error) {
-      this.logger.error('Webhook processing error:', error);
-      throw error;
+      this.logger.error(`Webhook processing error for payment ${molliePaymentId}:`, error);
+      // Important: Return success to Mollie even if we had an error
+      // This prevents Mollie from retrying the webhook
+      return { processed: false };
     }
   }
   

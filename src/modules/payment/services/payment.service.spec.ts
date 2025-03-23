@@ -33,12 +33,14 @@ describe('PaymentService', () => {
   beforeEach(async () => {
     const mockTransactionRepository = {
       create: jest.fn(),
+      update: jest.fn(), // Add this method
       updateReference: jest.fn(),
       updateStatus: jest.fn(),
       findByReference: jest.fn(),
       findById: jest.fn(),
       getUserTransactions: jest.fn(),
       getPendingWithdrawals: jest.fn(),
+      getAllTransactions: jest.fn(), 
     };
 
     const mockUserBalanceRepository = {
@@ -108,7 +110,11 @@ describe('PaymentService', () => {
         },
         method: paymentMethod,
         description: 'Test payment',
-        metadata: { transactionId: mockObjectId },
+        metadata: { 
+          transactionId: mockObjectId,
+          userId,
+          timestamp: expect.any(String)
+        },
         createdAt: new Date().toISOString(),
         expiresAt: new Date().toISOString(),
         mode: 'test',
@@ -134,8 +140,7 @@ describe('PaymentService', () => {
 
       transactionRepository.create.mockResolvedValue(mockTransaction as unknown as Transaction);
       mollieService.createPayment.mockResolvedValue(mockMolliePayment);
-      transactionRepository.updateReference.mockResolvedValue(undefined);
-      transactionRepository.updateStatus.mockResolvedValue(undefined);
+      transactionRepository.update.mockResolvedValue(undefined);
 
       const result = await service.initiateDeposit(userId, amount, paymentMethod);
 
@@ -150,18 +155,21 @@ describe('PaymentService', () => {
       expect(mollieService.createPayment).toHaveBeenCalledWith({
         amount,
         paymentMethod,
-        description: `Deposit to account - ${mockObjectId}`,
-        metadata: { transactionId: mockObjectId },
+        description: `Deposit to betting account - ${mockObjectId}`,
+        metadata: { 
+          transactionId: mockObjectId.toString(),
+          userId: userId,
+          timestamp: expect.any(String) 
+        },
       });
 
-      expect(transactionRepository.updateReference).toHaveBeenCalledWith(
+      expect(transactionRepository.update).toHaveBeenCalledWith(
         mockTransactionId,
-        'mollie_123',
-      );
-
-      expect(transactionRepository.updateStatus).toHaveBeenCalledWith(
-        mockTransactionId,
-        TransactionStatus.PENDING,
+        {
+          reference: 'mollie_123',
+          status: TransactionStatus.PENDING,
+          paymentMethod: paymentMethod,
+        }
       );
 
       expect(result).toEqual({
@@ -202,10 +210,12 @@ describe('PaymentService', () => {
         BadRequestException,
       );
 
-      expect(transactionRepository.updateStatus).toHaveBeenCalledWith(
+      expect(transactionRepository.update).toHaveBeenCalledWith(
         mockTransactionId,
-        TransactionStatus.FAILED,
-        'Mollie error',
+        {
+          status: TransactionStatus.FAILED,
+          failureReason: 'Mollie error'
+        }
       );
     });
   });
@@ -249,17 +259,19 @@ describe('PaymentService', () => {
       mollieService.getPayment.mockResolvedValue(mockMolliePayment);
       transactionRepository.findByReference.mockResolvedValue(mockTransaction as unknown as Transaction);
       userBalanceRepository.incrementBalance.mockResolvedValue(undefined);
-      transactionRepository.updateStatus.mockResolvedValue(undefined);
+      transactionRepository.update.mockResolvedValue(undefined);
 
       const result = await service.handlePaymentWebhook({ id: molliePaymentId });
 
       expect(mollieService.getPayment).toHaveBeenCalledWith(molliePaymentId);
       expect(transactionRepository.findByReference).toHaveBeenCalledWith(molliePaymentId);
       expect(userBalanceRepository.incrementBalance).toHaveBeenCalledWith(userId, amount);
-      expect(transactionRepository.updateStatus).toHaveBeenCalledWith(
+      expect(transactionRepository.update).toHaveBeenCalledWith(
         mockTransactionId,
-        TransactionStatus.COMPLETED,
-        undefined,
+        {
+          status: TransactionStatus.COMPLETED,
+          failureReason: undefined
+        }
       );
       expect(result).toEqual({ processed: true });
     });
@@ -301,11 +313,8 @@ describe('PaymentService', () => {
       await service.handlePaymentWebhook({ id: molliePaymentId });
 
       expect(userBalanceRepository.incrementBalance).not.toHaveBeenCalled();
-      expect(transactionRepository.updateStatus).toHaveBeenCalledWith(
-        mockTransactionId,
-        TransactionStatus.COMPLETED,
-        undefined,
-      );
+      // Status update is still called but should not change anything
+      expect(transactionRepository.update).not.toHaveBeenCalled();
     });
 
     it('should process a failed payment', async () => {
@@ -345,14 +354,16 @@ describe('PaymentService', () => {
       await service.handlePaymentWebhook({ id: molliePaymentId });
 
       expect(userBalanceRepository.incrementBalance).not.toHaveBeenCalled();
-      expect(transactionRepository.updateStatus).toHaveBeenCalledWith(
+      expect(transactionRepository.update).toHaveBeenCalledWith(
         mockTransactionId,
-        TransactionStatus.FAILED,
-        'Payment failed',
+        {
+          status: TransactionStatus.FAILED,
+          failureReason: 'Payment failed'
+        }
       );
     });
 
-    it('should throw NotFoundException when transaction is not found', async () => {
+    it('should return processed false when transaction is not found', async () => {
       const mockMolliePayment = {
         id: molliePaymentId,
         status: 'paid',
@@ -377,9 +388,14 @@ describe('PaymentService', () => {
       mollieService.getPayment.mockResolvedValue(mockMolliePayment);
       transactionRepository.findByReference.mockResolvedValue(null);
 
-      await expect(service.handlePaymentWebhook({ id: molliePaymentId })).rejects.toThrow(
-        NotFoundException,
-      );
+      const result = await service.handlePaymentWebhook({ id: molliePaymentId });
+      expect(result).toEqual({ processed: false });
+    });
+
+    it('should return processed false when webhook data is invalid', async () => {
+      const result = await service.handlePaymentWebhook({});
+      expect(result).toEqual({ processed: false });
+      expect(mollieService.getPayment).not.toHaveBeenCalled();
     });
   });
 

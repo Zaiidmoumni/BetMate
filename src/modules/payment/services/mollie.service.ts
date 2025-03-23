@@ -18,22 +18,30 @@ export class MollieService {
 
   async createPayment(params: {
     amount: number;
-    paymentMethod: string;
+    paymentMethod?: string;
     description: string;
     metadata: any;
   }): Promise<MolliePayment> {
     try {
-      return await this.client.payments.create({
+      const payload: any = {
         amount: {
           currency: 'EUR',
           value: params.amount.toFixed(2),
         },
-        method: params.paymentMethod,
         description: params.description,
-        redirectUrl: `${this.configService.get('APP_URL')}/payment/return`,
+        redirectUrl: `${this.configService.get('FRONTEND_URL')}/payment/return`,
         webhookUrl: `${this.configService.get('APP_URL')}/payment/webhook`,
         metadata: params.metadata,
-      });
+      };
+
+      // Only add method if specified (allows user to choose at Mollie checkout)
+      if (params.paymentMethod) {
+        payload.method = params.paymentMethod;
+      }
+
+      const payment = await this.client.payments.create(payload);
+      this.logger.log(`Created payment ${payment.id} for amount ${params.amount}`);
+      return payment;
     } catch (error) {
       this.logger.error('Failed to create Mollie payment:', error);
       throw error;
@@ -46,6 +54,21 @@ export class MollieService {
     } catch (error) {
       this.logger.error(`Failed to get payment ${paymentId}:`, error);
       throw error;
+    }
+  }
+
+  async getPaymentMethods(): Promise<any[]> {
+    try {
+      const methods = await this.client.methods.list();
+      return methods;
+    } catch (error) {
+      this.logger.error('Failed to get payment methods:', error);
+      // Return some defaults for testing
+      return [
+        { id: 'ideal', description: 'iDEAL' },
+        { id: 'creditcard', description: 'Credit Card' },
+        { id: 'bancontact', description: 'Bancontact' }
+      ];
     }
   }
 

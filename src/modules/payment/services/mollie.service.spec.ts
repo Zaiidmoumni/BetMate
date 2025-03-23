@@ -67,8 +67,7 @@ describe('MollieService', () => {
       };
 
       configService.get.mockImplementation((key) => {
-        if (key === 'APP_URL') return 'https://myapp.com';
-        return undefined;
+        return 'https://myapp.com';
       });
 
       mockMollieClient.payments.create.mockResolvedValue(expectedMolliePayment);

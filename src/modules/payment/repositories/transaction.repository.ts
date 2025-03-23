@@ -1,12 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { Transaction, TransactionType, TransactionStatus } from '@/modules/payment/transaction.schema'
+import {
+  Transaction,
+  TransactionType,
+  TransactionStatus,
+} from '@/modules/payment/transaction.schema';
 
 @Injectable()
 export class TransactionRepository {
   constructor(
-    @InjectModel(Transaction.name) private transactionModel: Model<Transaction>
+    @InjectModel(Transaction.name) private transactionModel: Model<Transaction>,
   ) {}
 
   async create(data: {
@@ -29,9 +33,9 @@ export class TransactionRepository {
   }
 
   async updateStatus(
-    id: string, 
-    status: TransactionStatus, 
-    failureReason?: string
+    id: string,
+    status: TransactionStatus,
+    failureReason?: string,
   ): Promise<Transaction> {
     const update: any = { status };
     if (failureReason) {
@@ -44,7 +48,7 @@ export class TransactionRepository {
     return this.transactionModel.findByIdAndUpdate(
       id,
       { reference },
-      { new: true }
+      { new: true },
     );
   }
 
@@ -58,14 +62,24 @@ export class TransactionRepository {
   async getAllTransactions(): Promise<Transaction[]> {
     return this.transactionModel.find().sort({ createdAt: -1 }).exec();
   }
-  
+
   async getPendingWithdrawals(): Promise<Transaction[]> {
     return this.transactionModel
       .find({
         type: 'withdrawal',
-        status: { $in: [TransactionStatus.INITIATED, TransactionStatus.PENDING, TransactionStatus.PROCESSING] }
+        status: {
+          $in: [
+            TransactionStatus.INITIATED,
+            TransactionStatus.PENDING,
+            TransactionStatus.PROCESSING,
+          ],
+        },
       })
       .sort({ createdAt: 1 })
       .exec();
+  }
+
+  async update(id: string, data: Partial<Transaction>): Promise<Transaction> {
+    return this.transactionModel.findByIdAndUpdate(id, data);
   }
 }
