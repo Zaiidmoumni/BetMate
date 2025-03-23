@@ -23,14 +23,16 @@ export class MollieService {
     metadata: any;
   }): Promise<MolliePayment> {
     try {
+
+      const transactionId = params.metadata.transactionId;
       const payload: any = {
         amount: {
           currency: 'EUR',
           value: params.amount.toFixed(2),
         },
         description: params.description,
-        redirectUrl: `${this.configService.get('FRONTEND_URL')}/payment/return`,
-        webhookUrl: `${this.configService.get('APP_URL')}/payment/webhook`,
+        redirectUrl: `${this.configService.get('FRONTEND_URL')}/payment/return/${transactionId}`,
+        // webhookUrl: `${this.configService.get('APP_URL')}/payment/webhook`,
         metadata: params.metadata,
       };
 

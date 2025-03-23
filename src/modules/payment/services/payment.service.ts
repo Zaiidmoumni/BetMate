@@ -48,6 +48,7 @@ export class PaymentService {
           timestamp: new Date().toISOString() 
         },
       });
+      
 
       // Update transaction with payment reference
       await this.transactionRepository.update(
@@ -83,69 +84,57 @@ export class PaymentService {
     }
   }
 
-  /**
-   * Processes Mollie webhook notifications
-   */
-  async handlePaymentWebhook(webhookData: any): Promise<{ processed: boolean }> {
-    if (!webhookData || !webhookData.id) {
-      this.logger.error('Invalid webhook data', webhookData);
-      return { processed: false };
+  async verifyPaymentStatus(transactionId: string): Promise<any> {
+    // Get the current transaction
+    const transaction = await this.transactionRepository.findById(transactionId);
+    
+    if (!transaction || !transaction.reference) {
+      throw new NotFoundException('Transaction not found or has no payment reference');
     }
     
-    const { id: molliePaymentId } = webhookData;
-    this.logger.log(`Processing webhook for payment ${molliePaymentId}`);
+    // Get fresh payment status from Mollie
+    const molliePayment = await this.mollieService.getPayment(transaction.reference);
+    const newStatus = this.mapMollieStatus(molliePayment.status);
     
-    try {
-      // Get fresh payment status from Mollie
-      const molliePayment = await this.mollieService.getPayment(molliePaymentId);
-      
-      // Find our transaction by Mollie reference
-      const transaction = await this.transactionRepository.findByReference(molliePaymentId);
-
-      if (!transaction) {
-        this.logger.error(`Transaction not found for Mollie payment ID: ${molliePaymentId}`);
-        return { processed: false };
-      }
-
-      const transactionId = transaction._id.toString();
-      const newStatus = this.mapMollieStatus(molliePayment.status);
-      
-      // Skip processing if status hasn't changed
-      if (newStatus === transaction.status) {
-        return { processed: true };
-      }
-      
-      // Update transaction status
-      await this.transactionRepository.update(
-        transactionId,
-        {
-          status: newStatus,
-          failureReason: newStatus === TransactionStatus.FAILED ? 
-            `Payment ${molliePayment.status}` : undefined
-        }
+    // If status hasn't changed, return current transaction
+    if (newStatus === transaction.status) {
+      return { 
+        status: newStatus,
+        transaction: transaction
+      };
+    }
+    
+    // Save the old status before updating
+    const oldStatus = transaction.status;
+    
+    // Update transaction status
+    await this.transactionRepository.update(
+      transactionId,
+      { status: newStatus }
+    );
+    
+    // If payment is completed and wasn't before, update user balance
+    if (newStatus === TransactionStatus.COMPLETED && 
+        oldStatus !== TransactionStatus.COMPLETED) {
+          
+      await this.userBalanceRepository.incrementBalance(
+        transaction.userId,
+        transaction.amount
       );
       
-      // If payment is completed, update user balance
-      if (newStatus === TransactionStatus.COMPLETED && 
-          transaction.status !== TransactionStatus.COMPLETED) {
-        
-        await this.userBalanceRepository.incrementBalance(
-          transaction.userId,
-          transaction.amount
-        );
-        
-        this.logger.log(`User ${transaction.userId} balance updated, added ${transaction.amount}`);
-      }
-      
-      this.logger.log(`Webhook processed: payment ${molliePaymentId}, status changed from ${transaction.status} to ${newStatus}`);
-      return { processed: true };
-    } catch (error) {
-      this.logger.error(`Webhook processing error for payment ${molliePaymentId}:`, error);
-      // Important: Return success to Mollie even if we had an error
-      // This prevents Mollie from retrying the webhook
-      return { processed: false };
+      this.logger.log(`User ${transaction.userId} balance updated, added ${transaction.amount}`);
     }
+    
+    // Fetch the updated transaction
+    const updatedTransaction = await this.transactionRepository.findById(transactionId);
+    
+    // Return updated transaction
+    return {
+      status: newStatus,
+      transaction: updatedTransaction
+    };
   }
+
   
   async initiateWithdrawal(
     userId: string,

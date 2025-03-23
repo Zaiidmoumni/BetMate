@@ -102,44 +102,6 @@ describe('PaymentController', () => {
     });
   });
 
-  describe('handlePaymentWebhook', () => {
-    it('should call paymentService.handlePaymentWebhook and return 200', async () => {
-      const mockWebhookData = { id: 'mollie_123' };
-      const mockResponse = {
-        status: jest.fn().mockReturnThis(),
-        send: jest.fn(),
-      } as unknown as Response;
-
-      paymentService.handlePaymentWebhook.mockResolvedValue({ processed: true });
-
-      await controller.handlePaymentWebhook(mockWebhookData, mockResponse);
-
-      expect(paymentService.handlePaymentWebhook).toHaveBeenCalledWith(mockWebhookData);
-      expect(mockResponse.status).toHaveBeenCalledWith(200);
-      expect(mockResponse.send).toHaveBeenCalled();
-    });
-
-    it('should handle errors from paymentService.handlePaymentWebhook', async () => {
-      const mockWebhookData = { id: 'mollie_123' };
-      const mockResponse = {
-        status: jest.fn().mockReturnThis(),
-        send: jest.fn(),
-      } as unknown as Response;
-
-      const error = new Error('Webhook processing failed');
-      paymentService.handlePaymentWebhook.mockRejectedValue(error);
-
-      try {
-        await controller.handlePaymentWebhook(mockWebhookData, mockResponse);
-      } catch (e) {
-        expect(e).toBe(error);
-      }
-
-      expect(paymentService.handlePaymentWebhook).toHaveBeenCalledWith(mockWebhookData);
-      expect(mockResponse.status).not.toHaveBeenCalled();
-      expect(mockResponse.send).not.toHaveBeenCalled();
-    });
-  });
 
   describe('initiateWithdrawal', () => {
     it('should call paymentService.initiateWithdrawal with correct parameters', async () => {

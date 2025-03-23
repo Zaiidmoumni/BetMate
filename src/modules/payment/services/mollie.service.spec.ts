@@ -81,8 +81,7 @@ describe('MollieService', () => {
         },
         method: 'ideal',
         description: 'Test payment',
-        redirectUrl: 'https://myapp.com/payment/return',
-        webhookUrl: 'https://myapp.com/payment/webhook',
+        redirectUrl: 'https://myapp.com/payment/return/123',
         metadata: { transactionId: '123' },
       });
 

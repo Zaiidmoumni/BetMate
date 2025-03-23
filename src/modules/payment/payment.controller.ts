@@ -38,10 +38,10 @@ export class PaymentController {
     );
   }
 
-  @Post('webhook')
-  async handlePaymentWebhook(@Body() webhookData: any, @Res() res: Response) {
-    await this.paymentService.handlePaymentWebhook(webhookData);
-    return res.status(200).send();
+  @Get('verify/:transactionId')
+  @UseGuards(AccessTokenGuard)
+  async verifyPayment(@Param('transactionId') transactionId: string) {
+    return this.paymentService.verifyPaymentStatus(transactionId);
   }
 
   @Post('withdraw')
@@ -89,7 +89,7 @@ export class PaymentController {
   }
 
   @Get('all')
-  @UseGuards(AccessTokenGuard, AdminGuard) 
+  @UseGuards(AccessTokenGuard, AdminGuard)
   async getAllTransactions() {
     return this.paymentService.getAllTransactions();
   }
